@@ -1,0 +1,86 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Ferramentas (py7zr, ninja)
+        run: python -m pip install py7zr ninja
+
+      - name: Cache do Qt
+        id: qtcache
+        uses: actions/cache@v4
+        with:
+          path: C:/Qt
+          key: qt-6.11.3-msvc2022_64-${{ hashFiles('tools/get-qt.sh') }}
+
+      - name: Baixar Qt
+        if: steps.qtcache.outputs.cache-hit != 'true'
+        shell: bash
+        run: tools/get-qt.sh C:/Qt
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Compilar
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=C:/Qt/6.11.3/msvc2022_64
+          cmake --build build
+
+      - name: Teste rápido (gravação e PDF)
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $env:PATH = "C:\Qt\6.11.3\msvc2022_64\bin;$env:PATH"
+          ./build/Pauta.exe --bench 500
+          ./build/Pauta.exe --export-pdf demo.pdf
+          ./build/Pauta.exe --export-png demo.png
+          if (-not (Test-Path demo.pdf)) { exit 1 }
+
+      - name: Pasta portátil
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/dist | Out-Null
+          Copy-Item build/Pauta.exe build/dist/
+          C:/Qt/6.11.3/msvc2022_64/bin/windeployqt.exe --release --no-opengl-sw --no-system-d3d-compiler build/dist/Pauta.exe
+          Copy-Item README.md, resources/fonts/OFL.txt build/dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pauta-windows
+          path: build/dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: demo
+          path: |
+            demo.pdf
+            demo.png
+
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependências
+        run: sudo apt-get update && sudo apt-get install -y qt6-base-dev ninja-build cmake fonts-liberation
+      - name: Compilar
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+      - name: Teste rápido
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          ./build/Pauta --bench 500
+          ./build/Pauta --export-pdf demo.pdf

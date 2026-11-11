@@ -1,0 +1,36 @@
+# Pauta — notas para o Claude Code
+
+Editor de partituras em C++20 + Qt 6 Widgets, inspirado no fluxo de trabalho do Finale.
+Metas: rodar bem em PCs fracos (i5 de 6ª geração, 8 GB) e abrir muitos formatos.
+Interface e mensagens em **português do Brasil**. Comentários no código em inglês.
+
+## Regras do projeto
+- Nada de código, arte ou recursos do Finale (nem decompilar). Só a ideia do fluxo de trabalho.
+- Durações sempre em `Frac` (frações exatas), nunca `float`.
+- Símbolos musicais só pela fonte SMuFL Bravura (`render/Smufl.*`).
+- Desempenho é requisito: meça com `--bench` antes/depois de mexer em `render/`.
+- Roteiro em `docs/ROADMAP.md` (marque o que concluir). Formato `.pauta` em `docs/FORMATO.md`.
+
+## Arquitetura (`src/`)
+- `model/` — `Score → Staff → Measure → Event(pitches|rest)`; utilitários de altura/clave/armadura.
+- `render/Engraver` — função pura `Score → Layout` (espaçamento, sistemas, páginas, primitivas por página).
+- `render/Renderer` — pinta um `PageLayout` (glifos em um único `QGlyphRun`), exporta PDF/PNG.
+- `edit/Editor` — cursor, entrada estilo Speedy Entry, desfazer por snapshot (`QUndoStack`).
+- `ui/` — `MainWindow`, `ScoreView` (só pinta páginas visíveis), `NewScoreDialog`.
+- `io/NativeFormat` — leitura/gravação do `.pauta` (XML).
+
+## Compilar
+- **Windows** (máquina do dono): `build.cmd` (Release em `build\Pauta.exe`), `build.cmd dist` (pasta portátil).
+  Qt em `C:\Qt\6.11.3\msvc2022_64`; se faltar, `tools/get-qt.sh` baixa e confere.
+- **Linux / sessão na nuvem**: `sudo apt-get install -y qt6-base-dev ninja-build cmake` e então
+  `cmake -S . -B build -G Ninja && cmake --build build`.
+- CI: `.github/workflows/build.yml` compila Windows e Linux; o `.exe` portátil sai como artefato `Pauta-windows`.
+
+## Verificar sem interface gráfica
+```
+QT_QPA_PLATFORM=offscreen ./build/Pauta --export-png demo.png            # partitura de demonstração
+QT_QPA_PLATFORM=offscreen ./build/Pauta --bench 1000                     # tempo de gravação
+QT_QPA_PLATFORM=offscreen ./build/Pauta --empty --test-keys "C D E F 4 G + Return" \
+    --grab janela.png --save-to teste.pauta                               # simula teclado e captura a janela
+```
+Olhe as imagens geradas para conferir a gravação. No Windows, ponha `C:\Qt\6.11.3\msvc2022_64\bin` no PATH.

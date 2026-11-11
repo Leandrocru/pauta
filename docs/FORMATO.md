@@ -1,0 +1,28 @@
+# Formato `.pauta` (versão 1)
+
+XML UTF-8, legível e editável à mão.
+
+```xml
+<pauta version="1">
+ <score>
+  <title>Estudo</title>
+  <composer>Fulano</composer>
+  <time beats="3" beatType="4"/>
+  <key fifths="1"/>                     <!-- -7..7: bemóis negativos, sustenidos positivos -->
+  <staff name="Piano" clef="treble">   <!-- treble | bass | alto | tenor -->
+   <measure>
+    <chord dur="2">                    <!-- dur: -1 breve, 0 semibreve, 1 mínima, 2 semínima, 3 colcheia ... 6 semifusa -->
+     <note step="G" oct="4"/>
+     <note step="B" oct="4"/>
+    </chord>
+    <rest dur="2" dots="1"/>
+   </measure>
+  </staff>
+ </score>
+</pauta>
+```
+
+- `alter` em `<note>`: -2..2 (bemol duplo … sustenido duplo). A nota escrita é
+  sempre explícita; a armadura só decide quais acidentes aparecem.
+- Todas as pautas têm o mesmo número de compassos.
+- Arquivos com `version` maior que a suportada são recusados.
