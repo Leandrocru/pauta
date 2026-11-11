@@ -117,6 +117,7 @@ jobs:
           DESTDIR=AppDir cmake --install build --prefix /usr
           export APPIMAGE_EXTRACT_AND_RUN=1
           export QMAKE=/usr/bin/qmake6
+          export EXTRA_PLATFORM_PLUGINS="libqoffscreen.so"
           export LDAI_OUTPUT=Pauta-x86_64.AppImage
           export OUTPUT=Pauta-x86_64.AppImage
           ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage \
