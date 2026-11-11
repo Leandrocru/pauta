@@ -7,7 +7,7 @@
 #include <QFileInfo>
 
 #ifndef PAUTA_NO_MXL
-#include <QtCore/private/qzipreader_p.h>
+#include <private/qzipreader_p.h>
 #endif
 
 #include <algorithm>
