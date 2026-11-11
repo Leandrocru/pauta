@@ -30,10 +30,16 @@ Clef clefFromKey(QStringView s)
     return Clef::Treble;
 }
 
-int attrInt(const QXmlStreamAttributes& a, QStringView name, int def)
+QStringView attr(const QXmlStreamAttributes& a, const char* name)
+{
+    // QLatin1String overload exists in every Qt 6 version (QStringView one only since 6.5).
+    return a.value(QLatin1String(name));
+}
+
+int attrInt(const QXmlStreamAttributes& a, const char* name, int def)
 {
     bool ok = false;
-    const int v = a.value(name).toInt(&ok);
+    const int v = attr(a, name).toInt(&ok);
     return ok ? v : def;
 }
 
@@ -113,7 +119,7 @@ bool loadNative(Score& out, const QString& path, QString* error)
             const auto a = r.attributes();
             if (n == u"pauta") {
                 sawRoot = true;
-                if (attrInt(a, u"version", 1) > 1) {
+                if (attrInt(a, "version", 1) > 1) {
                     if (error) *error = QStringLiteral("Arquivo criado por uma versão mais nova do programa.");
                     return false;
                 }
@@ -122,30 +128,30 @@ bool loadNative(Score& out, const QString& path, QString* error)
             } else if (n == u"composer") {
                 s.composer = r.readElementText();
             } else if (n == u"time") {
-                s.time.beats = qBound(1, attrInt(a, u"beats", 4), 64);
-                s.time.beatType = qBound(1, attrInt(a, u"beatType", 4), 64);
+                s.time.beats = qBound(1, attrInt(a, "beats", 4), 64);
+                s.time.beatType = qBound(1, attrInt(a, "beatType", 4), 64);
             } else if (n == u"key") {
-                s.keyFifths = qBound(-7, attrInt(a, u"fifths", 0), 7);
+                s.keyFifths = qBound(-7, attrInt(a, "fifths", 0), 7);
             } else if (n == u"staff") {
                 s.staves.emplace_back();
                 staff = &s.staves.back();
-                staff->name = a.value(u"name").toString();
-                staff->clef = clefFromKey(a.value(u"clef"));
+                staff->name = attr(a, "name").toString();
+                staff->clef = clefFromKey(attr(a, "clef"));
             } else if (n == u"measure" && staff) {
                 staff->measures.emplace_back();
                 measure = &staff->measures.back();
             } else if ((n == u"chord" || n == u"rest") && measure) {
                 measure->events.emplace_back();
                 event = &measure->events.back();
-                event->durLog = qBound(-1, attrInt(a, u"dur", 2), 6);
-                event->dots = qBound(0, attrInt(a, u"dots", 0), 3);
+                event->durLog = qBound(-1, attrInt(a, "dur", 2), 6);
+                event->dots = qBound(0, attrInt(a, "dots", 0), 3);
             } else if (n == u"note" && event) {
                 Pitch p;
-                const QString step = a.value(u"step").toString();
+                const QString step = attr(a, "step").toString();
                 const int idx = step.isEmpty() ? -1 : QStringLiteral("CDEFGAB").indexOf(step.at(0));
                 p.step = idx < 0 ? 0 : idx;
-                p.octave = qBound(0, attrInt(a, u"oct", 4), 9);
-                p.alter = qBound(-2, attrInt(a, u"alter", 0), 2);
+                p.octave = qBound(0, attrInt(a, "oct", 4), 9);
+                p.alter = qBound(-2, attrInt(a, "alter", 0), 2);
                 event->pitches.push_back(p);
             }
         } else if (tok == QXmlStreamReader::EndElement) {

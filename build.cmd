@@ -14,6 +14,8 @@ cmake --build build || exit /b 1
 if /i "%1"=="dist" (
   if not exist build\dist mkdir build\dist
   copy /y build\Pauta.exe build\dist\ >nul
-  "%QTDIR%\bin\windeployqt.exe" --release --no-compiler-runtime --no-opengl-sw --no-system-d3d-compiler build\dist\Pauta.exe || exit /b 1
+  "%QTDIR%\bin\windeployqt.exe" --release --no-compiler-runtime --no-opengl-sw --no-system-d3d-compiler --no-translations build\dist\Pauta.exe || exit /b 1
+  if not exist build\dist\translations mkdir build\dist\translations
+  copy /y "%QTDIR%\translations\qtbase_pt_BR.qm" build\dist\translations\ >nul
 )
 echo OK
