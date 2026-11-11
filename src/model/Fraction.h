@@ -1,5 +1,7 @@
 #pragma once
 // Exact rational number used for all musical time values (never floating point).
+// Hidden from moc: older moc versions (Qt 6.4 on Linux) cannot parse <compare>/<concepts>.
+#ifndef Q_MOC_RUN
 #include <compare>
 #include <cstdint>
 #include <numeric>
@@ -35,3 +37,5 @@ struct Frac {
 };
 
 } // namespace pauta
+
+#endif // Q_MOC_RUN
