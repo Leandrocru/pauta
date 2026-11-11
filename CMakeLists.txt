@@ -1,12 +1,14 @@
 cmake_minimum_required(VERSION 3.21)
 # The icon resource (.rc) has no includes; skip cmcldeps, which breaks with some CMake/Ninja setups.
 set(CMAKE_NINJA_CMCLDEPS_RC OFF)
-project(Pauta VERSION 0.3.0 LANGUAGES CXX)
+project(Pauta VERSION 0.4.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Gui PrintSupport)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Gui PrintSupport Xml)
+# Qt's private zip reader opens compressed MusicXML (.mxl). Optional: without it .mxl is refused.
+find_package(Qt6 QUIET COMPONENTS CorePrivate)
 qt_standard_project_setup()
 
 qt_add_executable(Pauta WIN32
@@ -16,6 +18,8 @@ qt_add_executable(Pauta WIN32
     src/model/Score.cpp
     src/io/NativeFormat.h
     src/io/NativeFormat.cpp
+    src/io/MusicXml.h
+    src/io/MusicXml.cpp
     src/render/Smufl.h
     src/render/Smufl.cpp
     src/render/Layout.h
@@ -45,7 +49,13 @@ qt_add_resources(Pauta "resources"
 
 target_include_directories(Pauta PRIVATE src)
 target_compile_definitions(Pauta PRIVATE PROJECT_VERSION_STRING="${PROJECT_VERSION}")
-target_link_libraries(Pauta PRIVATE Qt6::Widgets Qt6::Gui Qt6::PrintSupport)
+target_link_libraries(Pauta PRIVATE Qt6::Widgets Qt6::Gui Qt6::PrintSupport Qt6::Xml)
+if(TARGET Qt6::CorePrivate)
+    target_link_libraries(Pauta PRIVATE Qt6::CorePrivate)
+else()
+    target_compile_definitions(Pauta PRIVATE PAUTA_NO_MXL)
+    message(WARNING "Qt6::CorePrivate nao encontrado: arquivos .mxl compactados nao serao suportados")
+endif()
 
 if(WIN32)
     target_sources(Pauta PRIVATE resources/pauta.rc) # icon of Pauta.exe

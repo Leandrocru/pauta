@@ -44,6 +44,7 @@ private:
     bool saveAs();
     void newScore();
     void open();
+    void importMusicXml();
     void exportPdf();
     void print();
     void documentSetup();

@@ -1,3 +1,4 @@
+#include "io/MusicXml.h"
 #include "io/NativeFormat.h"
 #include "render/Engraver.h"
 #include "render/Renderer.h"
@@ -116,7 +117,7 @@ int main(int argc, char* argv[])
     QCommandLineOption selectOpt(QStringLiteral("select-all"), QStringLiteral("(teste) Seleciona tudo."));
     QCommandLineOption iconOpt(QStringLiteral("write-icon"), QStringLiteral("(desenvolvimento) Gera o ícone do programa."), QStringLiteral("pasta"));
     cli.addOptions({ pdfOpt, pngOpt, benchOpt, emptyOpt, keysOpt, grabOpt, savePauta, toolOpt, scrollOpt, selectOpt, iconOpt });
-    cli.addPositionalArgument(QStringLiteral("partitura"), QStringLiteral("Arquivo .pauta a abrir."));
+    cli.addPositionalArgument(QStringLiteral("partitura"), QStringLiteral("Arquivo .pauta ou MusicXML a abrir."));
     cli.process(app);
 
     if (!smufl::Font::instance().isValid()) {
@@ -153,7 +154,7 @@ int main(int argc, char* argv[])
     if (cli.isSet(pdfOpt) || cli.isSet(pngOpt)) {
         Score s = Score::makeDemo();
         QString err;
-        if (!args.isEmpty() && !io::loadNative(s, args.first(), &err)) {
+        if (!args.isEmpty() && !io::loadAnyScore(s, args.first(), &err)) {
             qCritical("%s", qPrintable(err));
             return 1;
         }

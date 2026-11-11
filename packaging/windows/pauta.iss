@@ -52,6 +52,10 @@ Root: HKA; Subkey: "Software\Classes\.pauta"; ValueType: string; ValueName: ""; 
 Root: HKA; Subkey: "Software\Classes\Pauta.Partitura"; ValueType: string; ValueName: ""; ValueData: "Partitura do Pauta"; Flags: uninsdeletekey; Tasks: assoc
 Root: HKA; Subkey: "Software\Classes\Pauta.Partitura\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\Pauta.exe,0"; Tasks: assoc
 Root: HKA; Subkey: "Software\Classes\Pauta.Partitura\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\Pauta.exe"" ""%1"""; Tasks: assoc
+; MusicXML: o Pauta aparece em "Abrir com", sem virar o programa padrão.
+Root: HKA; Subkey: "Software\Classes\.musicxml\OpenWithProgids"; ValueType: string; ValueName: "Pauta.Partitura"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.mxl\OpenWithProgids"; ValueType: string; ValueName: "Pauta.Partitura"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\Pauta.Partitura\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\Pauta.exe"" ""%1"""; Flags: uninsdeletekey
 
 [Run]
 Filename: "{app}\Pauta.exe"; Description: "{cm:LaunchProgram,Pauta}"; Flags: nowait postinstall skipifsilent

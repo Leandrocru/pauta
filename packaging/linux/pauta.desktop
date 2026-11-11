@@ -7,5 +7,5 @@ Exec=pauta %f
 Icon=pauta
 Terminal=false
 Categories=AudioVideo;Audio;Music;
-MimeType=application/x-pauta;
+MimeType=application/x-pauta;application/vnd.recordare.musicxml+xml;application/vnd.recordare.musicxml;
 Keywords=partitura;música;notação;score;music;notation;

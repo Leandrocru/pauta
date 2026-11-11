@@ -53,7 +53,9 @@ jobs:
           ./build/Pauta.exe --bench 500
           ./build/Pauta.exe --export-pdf demo.pdf
           ./build/Pauta.exe --export-png demo.png
-          if (-not (Test-Path demo.pdf)) { exit 1 }
+          ./build/Pauta.exe --export-png mx.png tests/data/piano-teste.musicxml
+          ./build/Pauta.exe --export-png mxl.png tests/data/piano-teste.mxl
+          if (-not (Test-Path demo.pdf) -or -not (Test-Path mx.png) -or -not (Test-Path mxl.png)) { exit 1 }
 
       - name: Pasta portátil (com o runtime do Visual C++ junto, sem instalar nada)
         shell: pwsh
@@ -91,7 +93,7 @@ jobs:
       - name: Dependências
         run: |
           sudo apt-get update
-          sudo apt-get install -y qt6-base-dev qt6-base-dev-tools qt6-translations-l10n ninja-build cmake fonts-liberation file libfuse2
+          sudo apt-get install -y qt6-base-dev qt6-base-private-dev qt6-base-dev-tools qt6-translations-l10n ninja-build cmake fonts-liberation file libfuse2
       - name: Compilar
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -102,6 +104,9 @@ jobs:
         run: |
           ./build/pauta --bench 500
           ./build/pauta --export-pdf demo.pdf
+          ./build/pauta --export-png mx.png tests/data/piano-teste.musicxml
+          ./build/pauta --export-png mxl.png tests/data/piano-teste.mxl
+          cmp mx.png mxl.png
 
       - name: Pacote .deb
         run: |

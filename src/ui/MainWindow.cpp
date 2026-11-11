@@ -1,6 +1,7 @@
 #include "ui/MainWindow.h"
 
 #include "edit/Editor.h"
+#include "io/MusicXml.h"
 #include "io/NativeFormat.h"
 #include "render/Engraver.h"
 #include "render/Renderer.h"
@@ -136,7 +137,7 @@ void MainWindow::buildMenus()
     file->addAction(QStringLiteral("Salvar &como…"), QKeySequence::SaveAs, this, &MainWindow::saveAs);
     file->addSeparator();
     QMenu* imp = file->addMenu(QStringLiteral("&Importar"));
-    disabledAction(imp, QStringLiteral("MusicXML…"));
+    imp->addAction(QStringLiteral("&MusicXML (.musicxml, .mxl)…"), QKeySequence(QStringLiteral("Ctrl+Shift+I")), this, &MainWindow::importMusicXml);
     disabledAction(imp, QStringLiteral("Arquivo MIDI…"));
     disabledAction(imp, QStringLiteral("Finale (.musx)…"));
     QMenu* exp = file->addMenu(QStringLiteral("&Exportar"));
@@ -684,8 +685,15 @@ void MainWindow::newScore()
 void MainWindow::open()
 {
     if (!maybeSave()) return;
-    const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("Abrir partitura"), QString(),
-                                                      QStringLiteral("Partitura Pauta (*.pauta)"));
+    const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("Abrir partitura"), QString(), io::openFileFilter());
+    if (!path.isEmpty()) openFile(path);
+}
+
+void MainWindow::importMusicXml()
+{
+    if (!maybeSave()) return;
+    const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("Importar MusicXML"), QString(),
+                                                      QStringLiteral("MusicXML (*.musicxml *.mxl *.xml)"));
     if (!path.isEmpty()) openFile(path);
 }
 
@@ -693,13 +701,24 @@ bool MainWindow::openFile(const QString& path)
 {
     Score s;
     QString err;
-    if (!io::loadNative(s, path, &err)) {
-        QMessageBox::warning(this, QStringLiteral("Erro ao abrir"), err);
+    QStringList warnings;
+    if (!io::loadAnyScore(s, path, &err, &warnings)) {
+        QMessageBox::warning(this, QStringLiteral("Erro ao abrir"),
+                             QStringLiteral("Não foi possível abrir %1.\n\n%2").arg(QFileInfo(path).fileName(), err));
         return false;
     }
     m_editor->setScore(std::move(s));
-    m_path = path;
+    // Imported files are saved as a new .pauta (the original MusicXML is never overwritten).
+    m_path = io::isMusicXmlPath(path) ? QString() : path;
     updateTitle();
+    if (io::isMusicXmlPath(path)) {
+        setWindowTitle(QStringLiteral("%1 (importado)[*] — Pauta").arg(QFileInfo(path).fileName()));
+        statusBar()->showMessage(QStringLiteral("MusicXML importado: %1").arg(QFileInfo(path).fileName()), 5000);
+    }
+    if (!warnings.isEmpty())
+        QMessageBox::information(this, QStringLiteral("Importação concluída com observações"),
+                                 QStringLiteral("A partitura foi importada. Algumas coisas foram simplificadas:\n\n• ")
+                                     + warnings.join(QStringLiteral("\n• ")));
     return true;
 }
 

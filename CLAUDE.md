@@ -19,6 +19,7 @@ Interface e mensagens em **português do Brasil**. Comentários no código em in
 - `ui/` — `MainWindow` (menus, paletas, barra de navegação), `ScoreView` (só pinta páginas visíveis; mouse e teclado conforme a ferramenta), `Tools.h` (lista de ferramentas), `Icons` (ícones próprios desenhados em tempo de execução), `LaunchDialog`, `NewScoreDialog`.
 - Interface: organização inspirada no Finale, mas ícones e arte são próprios (nunca copiar os do Finale).
 - `io/NativeFormat` — leitura/gravação do `.pauta` (XML).
+- `io/MusicXml` — importação MusicXML (partwise; `.mxl` via `QZipReader` privado do Qt). Hoje mantém só a primeira voz de cada pauta e avisa o que simplificou. Arquivo de teste: `tests/data/piano-teste.musicxml` (+ `.mxl`), usado também no CI.
 
 ## Compilar
 - **Windows** (máquina do dono): `build.cmd` (Release em `build\Pauta.exe`), `build.cmd dist` (pasta portátil).

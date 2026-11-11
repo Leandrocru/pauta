@@ -25,7 +25,8 @@ Cada etapa termina com um programa utilizável.
 - [x] Janela inicial (assistente, em branco, abrir, demonstração) e impressão
 
 ## Etapa 2 — Formatos principais
-- [ ] MusicXML (`.musicxml` / `.mxl`) — importar e exportar
+- [x] MusicXML (`.musicxml` / `.mxl`) — importar (uma voz por pauta; avisa o que simplificou)
+- [ ] MusicXML — exportar
 - [ ] MIDI (`.mid`) — importar (com quantização) e exportar
 - [ ] Reprodução com SoundFont (carregamento sob demanda)
 - [ ] Exportar SVG / PNG por página
