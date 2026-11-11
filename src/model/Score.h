@@ -3,6 +3,8 @@
 #include "model/Fraction.h"
 
 #include <QString>
+#include <algorithm>
+#include <array>
 #include <vector>
 
 namespace pauta {
@@ -30,9 +32,17 @@ struct Event {
     void sortPitches();
 };
 
+constexpr int kVoices = 4; // "layers" in Finale terms
+
 struct Measure {
-    std::vector<Event> events;
-    Frac filled() const;
+    std::vector<Event> events;                    // layer 1
+    std::array<std::vector<Event>, kVoices - 1> more; // layers 2..4
+
+    std::vector<Event>& voice(int v) { return v <= 0 ? events : more[size_t(std::min(v, kVoices - 1) - 1)]; }
+    const std::vector<Event>& voice(int v) const { return v <= 0 ? events : more[size_t(std::min(v, kVoices - 1) - 1)]; }
+    Frac filled(int v = 0) const;
+    bool isEmpty() const; // no events in any layer
+    int usedVoices() const; // how many layers hold at least one note (not only rests)
 };
 
 struct Staff {

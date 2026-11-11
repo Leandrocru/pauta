@@ -72,8 +72,9 @@ void Editor::clampCursor()
     if (m_score.staves.empty()) { m_cursor = Cursor{}; return; }
     m_cursor.staff = std::clamp(m_cursor.staff, 0, int(m_score.staves.size()) - 1);
     m_cursor.measure = std::clamp(m_cursor.measure, 0, m_score.measureCount() - 1);
-    m_cursor.index = std::clamp(m_cursor.index, 0, int(measure().events.size()));
+    m_cursor.index = std::clamp(m_cursor.index, 0, int(evs().size()));
     m_cursor.diatonic = std::clamp(m_cursor.diatonic, 7, 7 * 8 + 6);
+    m_cursor.voice = std::clamp(m_cursor.voice, 0, kVoices - 1);
     if (m_sel.active && (m_sel.staff1 >= int(m_score.staves.size()) || m_sel.measure1 >= m_score.measureCount()))
         m_sel.active = false;
 }
@@ -97,24 +98,26 @@ bool Editor::mutate(const QString& text, const std::function<bool()>& fn)
 const Event* Editor::currentEvent() const
 {
     const Measure& m = measure();
-    return m_cursor.index < int(m.events.size()) ? &m.events[size_t(m_cursor.index)] : nullptr;
+    const auto& ev = m.voice(m_cursor.voice);
+    return m_cursor.index < int(ev.size()) ? &ev[size_t(m_cursor.index)] : nullptr;
 }
 
 Event* Editor::currentEventMut()
 {
     Measure& m = measure();
-    return m_cursor.index < int(m.events.size()) ? &m.events[size_t(m_cursor.index)] : nullptr;
+    auto& ev = m.voice(m_cursor.voice);
+    return m_cursor.index < int(ev.size()) ? &ev[size_t(m_cursor.index)] : nullptr;
 }
 
 Event* Editor::targetEvent()
 {
     if (Event* e = currentEventMut()) return e;
     Measure& m = measure();
-    if (m_cursor.index > 0) return &m.events[size_t(m_cursor.index - 1)];
+    if (m_cursor.index > 0) return &m.voice(m_cursor.voice)[size_t(m_cursor.index - 1)];
     // Cursor at the start of an empty/next measure: use the last event of the previous measure.
     if (m_cursor.measure > 0) {
         auto& prev = m_score.staves[size_t(m_cursor.staff)].measures[size_t(m_cursor.measure - 1)];
-        if (!prev.events.empty()) return &prev.events.back();
+        if (!prev.voice(m_cursor.voice).empty()) return &prev.voice(m_cursor.voice).back();
     }
     return nullptr;
 }
@@ -129,7 +132,7 @@ Pitch Editor::cursorPitch() const
 void Editor::advanceIfFull()
 {
     const Measure& m = measure();
-    if (m_cursor.index == int(m.events.size()) && m.filled() >= m_score.time.capacity()) {
+    if (m_cursor.index == int(m.voice(m_cursor.voice).size()) && m.filled(m_cursor.voice) >= m_score.time.capacity()) {
         if (m_cursor.measure == m_score.measureCount() - 1) m_score.appendMeasure();
         ++m_cursor.measure;
         m_cursor.index = 0;
@@ -139,20 +142,20 @@ void Editor::advanceIfFull()
 bool Editor::insertEvent(Event e)
 {
     const Frac cap = m_score.time.capacity();
-    if (measure().filled() + e.duration() > cap) {
+    if (measure().filled(m_cursor.voice) + e.duration() > cap) {
         // A full measure with the cursor at its end: continue in the next one.
-        if (m_cursor.index == int(measure().events.size()) && measure().filled() >= cap) {
+        if (m_cursor.index == int(evs().size()) && measure().filled(m_cursor.voice) >= cap) {
             if (m_cursor.measure == m_score.measureCount() - 1) m_score.appendMeasure();
             ++m_cursor.measure;
             m_cursor.index = 0;
-            if (measure().filled() + e.duration() > cap) { emit message(tooLong()); return false; }
+            if (measure().filled(m_cursor.voice) + e.duration() > cap) { emit message(tooLong()); return false; }
         } else {
             emit message(tooLong());
             return false;
         }
     }
-    auto& evs = measure().events;
-    evs.insert(evs.begin() + m_cursor.index, std::move(e));
+    auto& list = evs();
+    list.insert(list.begin() + m_cursor.index, std::move(e));
     ++m_cursor.index;
     advanceIfFull();
     return true;
@@ -165,7 +168,7 @@ void Editor::enterDuration(int durLog)
         mutate(QStringLiteral("Alterar duração"), [&] {
             Event* e = currentEventMut();
             const Frac newDur = durationOf(durLog, e->dots);
-            if (measure().filled() - e->duration() + newDur > m_score.time.capacity()) {
+            if (measure().filled(m_cursor.voice) - e->duration() + newDur > m_score.time.capacity()) {
                 emit message(tooLong());
                 return false;
             }
@@ -259,8 +262,8 @@ void Editor::deleteEvent()
 {
     if (!currentEvent()) return;
     mutate(QStringLiteral("Apagar"), [&] {
-        auto& evs = measure().events;
-        evs.erase(evs.begin() + m_cursor.index);
+        auto& list = evs();
+        list.erase(list.begin() + m_cursor.index);
         return true;
     });
 }
@@ -271,11 +274,11 @@ void Editor::backspace()
         if (m_cursor.index == 0) {
             if (m_cursor.measure == 0) return false;
             --m_cursor.measure;
-            m_cursor.index = int(measure().events.size());
+            m_cursor.index = int(evs().size());
             if (m_cursor.index == 0) return true; // just moved into an empty measure
         }
-        auto& evs = measure().events;
-        evs.erase(evs.begin() + (m_cursor.index - 1));
+        auto& list = evs();
+        list.erase(list.begin() + (m_cursor.index - 1));
         --m_cursor.index;
         return true;
     });
@@ -330,8 +333,9 @@ void Editor::toggleDot()
         const int newDots = e->dots ? 0 : 1;
         // Find the measure that holds e to check the capacity.
         for (Measure& m : m_score.staves[size_t(m_cursor.staff)].measures) {
-            if (m.events.empty() || e < &m.events.front() || e > &m.events.back()) continue;
-            if (m.filled() - e->duration() + durationOf(e->durLog, newDots) > m_score.time.capacity()) {
+            const auto& ev = m.voice(m_cursor.voice);
+            if (ev.empty() || e < &ev.front() || e > &ev.back()) continue;
+            if (m.filled(m_cursor.voice) - e->duration() + durationOf(e->durLog, newDots) > m_score.time.capacity()) {
                 emit message(tooLong());
                 return false;
             }
@@ -366,13 +370,13 @@ void Editor::moveStep(int d)
 
 void Editor::moveEvent(int d)
 {
-    const int size = int(measure().events.size());
+    const int size = int(evs().size());
     if (d > 0) {
         if (m_cursor.index < size) ++m_cursor.index;
         else if (m_cursor.measure < m_score.measureCount() - 1) { ++m_cursor.measure; m_cursor.index = 0; }
     } else {
         if (m_cursor.index > 0) --m_cursor.index;
-        else if (m_cursor.measure > 0) { --m_cursor.measure; m_cursor.index = int(measure().events.size()); }
+        else if (m_cursor.measure > 0) { --m_cursor.measure; m_cursor.index = int(evs().size()); }
     }
     emit cursorChanged();
 }
@@ -397,8 +401,15 @@ void Editor::moveStaff(int d)
     emit cursorChanged();
 }
 
+void Editor::setVoice(int v)
+{
+    m_cursor.voice = std::clamp(v, 0, kVoices - 1);
+    m_cursor.index = std::min(m_cursor.index, int(evs().size()));
+    emit cursorChanged();
+}
+
 void Editor::moveHome() { m_cursor.index = 0; emit cursorChanged(); }
-void Editor::moveEnd() { m_cursor.index = int(measure().events.size()); emit cursorChanged(); }
+void Editor::moveEnd() { m_cursor.index = int(evs().size()); emit cursorChanged(); }
 
 void Editor::addMeasures(int n)
 {
@@ -478,7 +489,7 @@ void Editor::clearSelectionContents()
     mutate(QStringLiteral("Limpar compassos"), [&] {
         for (int s = m_sel.staff0; s <= m_sel.staff1; ++s)
             for (int m = m_sel.measure0; m <= m_sel.measure1; ++m)
-                m_score.staves[size_t(s)].measures[size_t(m)].events.clear();
+                for (int v = 0; v < kVoices; ++v) m_score.staves[size_t(s)].measures[size_t(m)].voice(v).clear();
         return true;
     });
 }
@@ -491,7 +502,8 @@ void Editor::setKeySignature(int fifths)
         // Keep the music diatonic: notes that followed the old key follow the new one.
         for (Staff& st : m_score.staves)
             for (Measure& m : st.measures)
-                for (Event& e : m.events)
+                for (int v = 0; v < kVoices; ++v)
+                for (Event& e : m.voice(v))
                     for (Pitch& p : e.pitches)
                         if (p.alter == keyAlterFor(p.step, m_score.keyFifths)) p.alter = keyAlterFor(p.step, fifths);
         m_score.keyFifths = fifths;
@@ -506,30 +518,43 @@ void Editor::setTimeSignature(TimeSig t)
         // Rebar: pour every staff's events into measures of the new length (events that do not
         // fit at the end of a measure move to the next one).
         const Frac cap = t.capacity();
-        size_t maxMeasures = 1;
-        std::vector<std::vector<Measure>> rebarred;
-        for (Staff& st : m_score.staves) {
-            std::vector<Measure> out(1);
-            for (Measure& m : st.measures) {
-                if (m.events.empty()) { // keep empty measures as empty measures (whole-measure rests)
-                    if (!out.back().events.empty()) out.emplace_back();
-                    out.emplace_back();
-                    continue;
-                }
-                for (Event& e : m.events) {
-                    if (out.back().filled() + e.duration() > cap && !out.back().events.empty()) out.emplace_back();
-                    out.back().events.push_back(std::move(e));
-                    if (out.back().filled() >= cap) out.emplace_back();
-                }
-            }
-            while (out.size() > 1 && out.back().events.empty()) out.pop_back();
-            maxMeasures = std::max(maxMeasures, out.size());
-            rebarred.push_back(std::move(out));
-        }
-        maxMeasures = std::max(maxMeasures, size_t(m_score.measureCount()));
+        size_t maxMeasures = size_t(std::max(1, m_score.measureCount()));
+        // Each layer is rebarred on its own; layer lists per staff, then merged back.
+        std::vector<std::array<std::vector<std::vector<Event>>, kVoices>> rebarred(m_score.staves.size());
         for (size_t s = 0; s < m_score.staves.size(); ++s) {
-            rebarred[s].resize(maxMeasures);
-            m_score.staves[s].measures = std::move(rebarred[s]);
+            for (int v = 0; v < kVoices; ++v) {
+                auto& out = rebarred[s][size_t(v)];
+                out.emplace_back();
+                auto fill = [&](const std::vector<Event>& evs) {
+                    Frac f;
+                    for (const Event& e : evs) f += e.duration();
+                    return f;
+                };
+                for (Measure& m : m_score.staves[s].measures) {
+                    auto& src = m.voice(v);
+                    if (src.empty()) { // keep empty measures as empty measures (whole-measure rests)
+                        if (!out.back().empty()) out.emplace_back();
+                        out.emplace_back();
+                        continue;
+                    }
+                    for (Event& e : src) {
+                        if (fill(out.back()) + e.duration() > cap && !out.back().empty()) out.emplace_back();
+                        out.back().push_back(std::move(e));
+                        if (fill(out.back()) >= cap) out.emplace_back();
+                    }
+                }
+                while (out.size() > 1 && out.back().empty()) out.pop_back();
+                if (v == 0 || std::any_of(out.begin(), out.end(), [](const auto& x) { return !x.empty(); }))
+                    maxMeasures = std::max(maxMeasures, out.size());
+            }
+        }
+        for (size_t s = 0; s < m_score.staves.size(); ++s) {
+            std::vector<Measure> measures(maxMeasures);
+            for (int v = 0; v < kVoices; ++v) {
+                auto& lists = rebarred[s][size_t(v)];
+                for (size_t m = 0; m < lists.size() && m < maxMeasures; ++m) measures[m].voice(v) = std::move(lists[m]);
+            }
+            m_score.staves[s].measures = std::move(measures);
         }
         m_score.time = t;
         m_cursor.index = 0;

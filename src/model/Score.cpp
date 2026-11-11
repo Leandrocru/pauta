@@ -24,12 +24,27 @@ void Event::sortPitches()
               [](const Pitch& a, const Pitch& b) { return a.diatonic() < b.diatonic(); });
 }
 
-Frac Measure::filled() const
+Frac Measure::filled(int v) const
 {
     Frac t;
-    for (const Event& e : events)
+    for (const Event& e : voice(v))
         t += e.duration();
     return t;
+}
+
+bool Measure::isEmpty() const
+{
+    for (int v = 0; v < kVoices; ++v)
+        if (!voice(v).empty()) return false;
+    return true;
+}
+
+int Measure::usedVoices() const
+{
+    int n = 0;
+    for (int v = 0; v < kVoices; ++v)
+        if (std::any_of(voice(v).begin(), voice(v).end(), [](const Event& e) { return !e.isRest(); })) ++n;
+    return n;
 }
 
 void Score::appendMeasure()

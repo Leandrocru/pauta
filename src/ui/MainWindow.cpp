@@ -369,6 +369,27 @@ void MainWindow::buildNavigationBar()
         m_view->setFocus();
     });
 
+    // Layer selector (Finale: layers 1-4, each with its own colour).
+    nav->addSeparator();
+    nav->addWidget(new QLabel(QStringLiteral(" Camada ")));
+    m_layerGroup = new QActionGroup(this);
+    static const char* layerColors[4] = { "#1e6fd9", "#d62828", "#1e963c", "#2846c8" };
+    for (int v = 0; v < kVoices; ++v) {
+        QAction* a = new QAction(QString::number(v + 1), this);
+        a->setCheckable(true);
+        a->setData(v);
+        a->setToolTip(QStringLiteral("Camada %1 (Alt+%1)%2").arg(v + 1).arg(v % 2 == 0 ? QStringLiteral(" — hastes para cima quando há outra camada")
+                                                                                          : QStringLiteral(" — hastes para baixo quando há outra camada")));
+        m_layerGroup->addAction(a);
+        nav->addAction(a);
+        if (auto* b = qobject_cast<QToolButton*>(nav->widgetForAction(a))) {
+            b->setStyleSheet(QStringLiteral("QToolButton { color: %1; font-weight: bold; min-width: 18px; }").arg(QLatin1String(layerColors[v])));
+            b->setFocusPolicy(Qt::NoFocus);
+        }
+        if (v == 0) a->setChecked(true);
+        connect(a, &QAction::triggered, this, [this, v] { m_editor->setVoice(v); m_view->setFocus(); });
+    }
+
     nav->addSeparator();
     const QString playTip = QStringLiteral("Reprodução: em breve");
     for (auto [kind, name] : { std::pair{ icons::Transport::Rewind, QStringLiteral("Voltar ao início") },
@@ -455,6 +476,8 @@ void MainWindow::rebuildToolMenu()
         break;
     case Tool::SpeedyEntry:
         m_toolMenu->addAction(QStringLiteral("Atalhos de teclado…"), this, &MainWindow::showShortcuts);
+        m_toolMenu->addSeparator();
+        for (QAction* a : m_layerGroup->actions()) m_toolMenu->addAction(a);
         disabledAction(m_toolMenu, QStringLiteral("Usar teclado MIDI para a altura"));
         break;
     default:
@@ -600,14 +623,18 @@ void MainWindow::updateStatus()
     const Staff& st = s.staves[size_t(c.staff)];
     const QString staffName = st.name.isEmpty() ? QStringLiteral("Pauta %1").arg(c.staff + 1) : st.name;
     const Pitch p = Pitch::fromDiatonic(c.diatonic, keyAlterFor(((c.diatonic % 7) + 7) % 7, s.keyFifths));
-    m_status->setText(QStringLiteral("%1  ·  %2  ·  Compasso %3 de %4  ·  Cursor: %5  ·  Duração: %6")
+    m_status->setText(QStringLiteral("%1  ·  %2  ·  Camada %3  ·  Compasso %4 de %5  ·  Cursor: %6  ·  Duração: %7")
                           .arg(toolInfo(m_tool).name, staffName)
+                          .arg(c.voice + 1)
                           .arg(c.measure + 1)
                           .arg(s.measureCount())
                           .arg(pitchName(p), durationName(m_editor->durLog())));
     if (m_durGroup)
         for (QAction* a : m_durGroup->actions())
             if (a->data().toInt() == m_editor->durLog()) a->setChecked(true);
+    if (m_layerGroup)
+        for (QAction* a : m_layerGroup->actions())
+            if (a->data().toInt() == c.voice) a->setChecked(true);
     updateNavigation();
 }
 
@@ -794,6 +821,7 @@ void MainWindow::showShortcuts()
         "<tr><td><b>.</b></td><td>Ponto de aumento</td></tr>"
         "<tr><td><b>Shift + ↑ / ↓</b></td><td>Transpõe a nota (Ctrl: oitava)</td></tr>"
         "<tr><td><b>Delete / Backspace</b></td><td>Apaga a nota atual / anterior</td></tr>"
+        "<tr><td><b>Alt + 1 – 4</b></td><td>Escolhe a camada (voz) 1 a 4. Com duas camadas, a 1 fica com hastes para cima e a 2 para baixo</td></tr>"
         "<tr><td><b>Ctrl + E</b></td><td>Alterna visualização de página / contínua</td></tr>"
         "<tr><td><b>Ctrl + roda do mouse</b></td><td>Zoom</td></tr>"
         "</table>"));

@@ -43,14 +43,23 @@ struct EventInfo {
     int accCols = 0;
     bool stemUp = true;
     bool hasSecond = false;
+    bool shiftRight = false;  // moved right to avoid another layer's notehead
+    int restPos = 0;          // staff position of a rest
     int beamGroup = -1;       // index into StaffMeasureInfo::beams, -1 = flagged/unbeamed
     Frac onset;
 };
 
+// One layer of one staff in one measure.
 struct StaffMeasureInfo {
     std::vector<EventInfo> events;
     std::vector<std::vector<int>> beams; // event indices of each beam group (>= 2 notes)
     Frac filled;
+};
+
+// All layers of one staff in one measure.
+struct StaffInfo {
+    std::array<StaffMeasureInfo, kVoices> v;
+    bool multi = false; // more than one layer has notes: stems are fixed per layer
 };
 
 // Beaming unit: dotted quarter (or 3 x beat) in compound meters, quarter note otherwise.
@@ -68,7 +77,7 @@ struct MeasureSpacing {
     std::vector<qreal> stretchAt; // stretchable space before onset i
     qreal fixedTotal = 0;
     qreal stretchTotal = 0;
-    std::vector<StaffMeasureInfo> staves;
+    std::vector<StaffInfo> staves;
 
     qreal width(qreal f) const { return fixedTotal + stretchTotal * f; }
     qreal xAt(size_t i, qreal f) const { return fixedAt[i] + stretchAt[i] * f; }
@@ -79,73 +88,98 @@ struct MeasureSpacing {
     }
 };
 
-void analyseEvents(const Score& score, const Staff& staff, const Measure& m, StaffMeasureInfo& out)
+void analyseEvents(const Score& score, const Staff& staff, const Measure& m, StaffInfo& out)
 {
+    out.multi = m.usedVoices() > 1;
+
+    // 1) Onsets, positions and default stem directions, layer by layer.
+    for (int v = 0; v < kVoices; ++v) {
+        StaffMeasureInfo& vi = out.v[size_t(v)];
+        Frac t;
+        for (const Event& e : m.voice(v)) {
+            EventInfo info;
+            info.onset = t;
+            t += e.duration();
+            const size_t n = e.pitches.size();
+            info.pos.resize(n);
+            info.acc.assign(n, kNoAcc);
+            info.accCol.assign(n, 0);
+            info.offset.assign(n, false);
+            for (size_t k = 0; k < n; ++k) info.pos[k] = staffPosition(e.pitches[k].diatonic(), staff.clef);
+            if (out.multi) info.stemUp = v % 2 == 0; // layers 1/3 up, 2/4 down
+            else if (n > 0) info.stemUp = info.pos.front() + info.pos.back() < 0;
+            const int base = e.durLog <= 0 ? 2 : 0;   // whole rest hangs from line 4
+            info.restPos = !out.multi ? base : (v % 2 == 0 ? base + 4 : base - 4);
+            vi.events.push_back(std::move(info));
+        }
+        vi.filled = t;
+    }
+
+    // 2) Accidentals: one state per staff, shared by all layers, applied in time order.
+    struct Ref { Frac onset; int v; size_t k; };
+    std::vector<Ref> order;
+    for (int v = 0; v < kVoices; ++v)
+        for (size_t k = 0; k < out.v[size_t(v)].events.size(); ++k) order.push_back({ out.v[size_t(v)].events[k].onset, v, k });
+    std::stable_sort(order.begin(), order.end(), [](const Ref& a, const Ref& b) { return a.onset < b.onset; });
     std::map<int, int> state; // diatonic -> current alteration within the measure
-    Frac t;
-    for (const Event& e : m.events) {
-        EventInfo info;
-        info.onset = t;
-        t += e.duration();
-        const size_t n = e.pitches.size();
-        info.pos.resize(n);
-        info.acc.assign(n, kNoAcc);
-        info.accCol.assign(n, 0);
-        info.offset.assign(n, false);
-        for (size_t k = 0; k < n; ++k) {
+    for (const Ref& r : order) {
+        const Event& e = m.voice(r.v)[r.k];
+        EventInfo& info = out.v[size_t(r.v)].events[r.k];
+        for (size_t k = 0; k < e.pitches.size(); ++k) {
             const Pitch& p = e.pitches[k];
-            info.pos[k] = staffPosition(p.diatonic(), staff.clef);
             auto it = state.find(p.diatonic());
             const int current = it != state.end() ? it->second : keyAlterFor(p.step, score.keyFifths);
             if (p.alter != current) info.acc[k] = p.alter;
             state[p.diatonic()] = p.alter;
         }
-        if (n > 0) info.stemUp = info.pos.front() + info.pos.back() < 0;
-        out.events.push_back(std::move(info));
     }
-    out.filled = t;
 
-    // Beam groups: consecutive eighth-or-shorter notes inside one beaming unit; rests,
-    // longer notes and unit boundaries break the beam.
+    // 3) Beam groups per layer: consecutive eighth-or-shorter notes inside one beaming unit;
+    //    rests, longer notes and unit boundaries break the beam.
     const Frac unit = beamUnit(score.time);
-    std::vector<int> cur;
-    int64_t curUnit = -1;
-    auto flush = [&] {
-        if (cur.size() >= 2) {
-            const int g = int(out.beams.size());
-            int top = -1000, bottom = 1000;
-            for (int i : cur) {
-                top = std::max(top, out.events[size_t(i)].pos.back());
-                bottom = std::min(bottom, out.events[size_t(i)].pos.front());
+    for (int v = 0; v < kVoices; ++v) {
+        StaffMeasureInfo& vi = out.v[size_t(v)];
+        const std::vector<Event>& evs = m.voice(v);
+        std::vector<int> cur;
+        int64_t curUnit = -1;
+        auto flush = [&] {
+            if (cur.size() >= 2) {
+                const int g = int(vi.beams.size());
+                int top = -1000, bottom = 1000;
+                for (int i : cur) {
+                    top = std::max(top, vi.events[size_t(i)].pos.back());
+                    bottom = std::min(bottom, vi.events[size_t(i)].pos.front());
+                }
+                const bool up = out.multi ? v % 2 == 0 : top + bottom < 0; // farther extreme decides
+                for (int i : cur) {
+                    vi.events[size_t(i)].beamGroup = g;
+                    vi.events[size_t(i)].stemUp = up;
+                }
+                vi.beams.push_back(cur);
             }
-            const bool up = top + bottom < 0; // the extreme farther from the middle line decides
-            for (int i : cur) {
-                out.events[size_t(i)].beamGroup = g;
-                out.events[size_t(i)].stemUp = up;
+            cur.clear();
+        };
+        for (size_t k = 0; k < evs.size(); ++k) {
+            const Event& e = evs[k];
+            const EventInfo& info = vi.events[k];
+            const bool beamable = !e.isRest() && e.durLog >= 3;
+            const Frac end = info.onset + e.duration();
+            const int64_t u = unitIndex(info.onset, unit);
+            const bool fitsUnit = end <= Frac(u + 1) * unit;
+            if (!beamable || !fitsUnit || (u != curUnit && !cur.empty())) flush();
+            if (beamable && fitsUnit) {
+                curUnit = u;
+                cur.push_back(int(k));
             }
-            out.beams.push_back(cur);
         }
-        cur.clear();
-    };
-    for (size_t k = 0; k < m.events.size(); ++k) {
-        const Event& e = m.events[k];
-        const EventInfo& info = out.events[k];
-        const bool beamable = !e.isRest() && e.durLog >= 3;
-        const Frac end = info.onset + e.duration();
-        const int64_t u = unitIndex(info.onset, unit);
-        const bool fitsUnit = end <= Frac(u + 1) * unit;
-        if (!beamable || !fitsUnit || (u != curUnit && !cur.empty())) flush();
-        if (beamable && fitsUnit) {
-            curUnit = u;
-            cur.push_back(int(k));
-        }
+        flush();
     }
-    flush();
 
-    for (EventInfo& info : out.events) {
-        const size_t n = info.pos.size();
-        if (n > 0) {
-            // Seconds inside a chord: alternate noteheads to the other side of the stem.
+    // 4) Seconds inside chords and accidental columns.
+    for (StaffMeasureInfo& vi : out.v) {
+        for (EventInfo& info : vi.events) {
+            const size_t n = info.pos.size();
+            if (n == 0) continue;
             if (info.stemUp) {
                 for (size_t k = 1; k < n; ++k)
                     if (info.pos[k] - info.pos[k - 1] == 1 && !info.offset[k - 1]) info.offset[k] = true;
@@ -171,6 +205,20 @@ void analyseEvents(const Score& score, const Staff& staff, const Measure& m, Sta
             info.accCols = int(cols.size());
         }
     }
+
+    // 5) Down-stem layers whose notes would touch an up-stem layer at the same time
+    //    (unison or second) are moved to the right, as in standard engraving.
+    if (out.multi) {
+        for (int v = 1; v < kVoices; v += 2) {
+            for (EventInfo& low : out.v[size_t(v)].events) {
+                if (low.pos.empty()) continue;
+                for (int u = 0; u < kVoices; u += 2)
+                    for (const EventInfo& high : out.v[size_t(u)].events)
+                        if (high.onset == low.onset && !high.pos.empty() && high.pos.front() - low.pos.back() <= 1)
+                            low.shiftRight = true;
+            }
+        }
+    }
 }
 
 MeasureSpacing computeSpacing(const Score& score, int mi, qreal sp, qreal headW)
@@ -183,9 +231,11 @@ MeasureSpacing computeSpacing(const Score& score, int mi, qreal sp, qreal headW)
     for (size_t s = 0; s < score.staves.size(); ++s) {
         const Staff& st = score.staves[s];
         analyseEvents(score, st, st.measures[size_t(mi)], ms.staves[s]);
-        for (const EventInfo& e : ms.staves[s].events) onsetSet.insert(e.onset);
-        onsetSet.insert(ms.staves[s].filled);
-        end = std::max(end, ms.staves[s].filled);
+        for (const StaffMeasureInfo& vi : ms.staves[s].v) {
+            for (const EventInfo& e : vi.events) onsetSet.insert(e.onset);
+            onsetSet.insert(vi.filled);
+            end = std::max(end, vi.filled);
+        }
     }
     onsetSet.insert(end);
     ms.onsets.assign(onsetSet.begin(), onsetSet.end());
@@ -195,14 +245,18 @@ MeasureSpacing computeSpacing(const Score& score, int mi, qreal sp, qreal headW)
     std::vector<qreal> extraLeft(n, 0), extraRight(n, 0);
     for (size_t s = 0; s < score.staves.size(); ++s) {
         const Measure& m = score.staves[s].measures[size_t(mi)];
-        for (size_t k = 0; k < m.events.size(); ++k) {
-            const EventInfo& info = ms.staves[s].events[k];
-            const size_t i = ms.indexOf(info.onset);
-            qreal left = info.accCols > 0 ? info.accCols * kAccColW * sp + 0.2 * sp : 0;
-            qreal right = m.events[k].dots > 0 ? (0.4 + 0.5 * m.events[k].dots) * sp : 0;
-            if (info.hasSecond) (info.stemUp ? right : left) += headW;
-            extraLeft[i] = std::max(extraLeft[i], left);
-            extraRight[i] = std::max(extraRight[i], right);
+        for (int v = 0; v < kVoices; ++v) {
+            const std::vector<Event>& evs = m.voice(v);
+            for (size_t k = 0; k < evs.size(); ++k) {
+                const EventInfo& info = ms.staves[s].v[size_t(v)].events[k];
+                const size_t i = ms.indexOf(info.onset);
+                qreal left = info.accCols > 0 ? info.accCols * kAccColW * sp + 0.2 * sp : 0;
+                qreal right = evs[k].dots > 0 ? (0.4 + 0.5 * evs[k].dots) * sp : 0;
+                if (info.hasSecond) (info.stemUp ? right : left) += headW;
+                if (info.shiftRight) right += 1.1 * headW;
+                extraLeft[i] = std::max(extraLeft[i], left);
+                extraRight[i] = std::max(extraRight[i], right);
+            }
         }
     }
 
@@ -270,7 +324,7 @@ public:
         m_layout.pageHeight = opt.pageHeight;
         m_layout.sp = opt.sp;
         m_headW = m_font.advance(smufl::NoteheadBlack, m_sp);
-        m_pendingTies.resize(score.staves.size());
+        m_pendingTies.resize(score.staves.size() * kVoices);
     }
 
     Layout run();
@@ -287,10 +341,10 @@ private:
     void drawSystem(const System& sys, int page, qreal left, qreal top, bool firstSystem);
     void drawHeader(PageLayout& pg, int staff, qreal x, qreal staffTop, bool showTime);
     void drawEvent(PageLayout& pg, const Event& e, const EventInfo& info, qreal x, qreal staffTop, bool beamed);
-    void drawBeamGroup(PageLayout& pg, const Measure& meas, const StaffMeasureInfo& smi, const std::vector<int>& group,
+    void drawBeamGroup(PageLayout& pg, const std::vector<Event>& evs, const StaffMeasureInfo& smi, const std::vector<int>& group,
                        const std::vector<qreal>& xs, qreal staffTop);
     void drawTie(int page, qreal x0, qreal x1, qreal y, bool above);
-    void handleTies(int page, int staff, const Event& e, const EventInfo& info, qreal x, qreal staffTop,
+    void handleTies(int page, int staff, int voice, const Event& e, const EventInfo& info, qreal x, qreal staffTop,
                     qreal systemStartX, qreal systemEndX);
 
     struct PendingTie {
@@ -301,7 +355,7 @@ private:
         qreal staffTop = 0;
         qreal systemEndX = 0;
     };
-    std::vector<std::vector<PendingTie>> m_pendingTies; // per staff
+    std::vector<std::vector<PendingTie>> m_pendingTies; // per staff and layer
     void drawMeasureRest(PageLayout& pg, qreal x0, qreal x1, qreal staffTop);
 
     void glyph(PageLayout& pg, char16_t cp, qreal x, qreal y)
@@ -404,11 +458,11 @@ void Builder::drawEvent(PageLayout& pg, const Event& e, const EventInfo& info, q
 {
     if (e.isRest()) {
         const char16_t cp = smufl::restFor(e.durLog);
-        const int pos = e.durLog <= 0 ? 2 : 0;
+        const int pos = info.restPos;
         glyph(pg, cp, x, y(staffTop, pos));
         const qreal w = m_font.advance(cp, m_sp);
         for (int d = 0; d < e.dots; ++d)
-            glyph(pg, smufl::AugmentationDot, x + w + (0.4 + 0.5 * d) * m_sp, y(staffTop, 1));
+            glyph(pg, smufl::AugmentationDot, x + w + (0.4 + 0.5 * d) * m_sp, y(staffTop, pos + 1 - (pos % 2 != 0 ? 1 : 0)));
         return;
     }
 
@@ -471,7 +525,7 @@ void Builder::drawEvent(PageLayout& pg, const Event& e, const EventInfo& info, q
     }
 }
 
-void Builder::drawBeamGroup(PageLayout& pg, const Measure& meas, const StaffMeasureInfo& smi,
+void Builder::drawBeamGroup(PageLayout& pg, const std::vector<Event>& evs, const StaffMeasureInfo& smi,
                             const std::vector<int>& group, const std::vector<qreal>& xs, qreal staffTop)
 {
     const qreal sp = m_sp;
@@ -492,7 +546,7 @@ void Builder::drawBeamGroup(PageLayout& pg, const Measure& meas, const StaffMeas
         sx[i] = up ? xs[size_t(group[i])] + headW - stemW / 2 : xs[size_t(group[i])] + stemW / 2;
         endY[i] = up ? topY : botY;                       // note nearest to the beam
         baseY[i] = up ? botY - 0.168 * sp : topY + 0.168 * sp; // stem starts at the far note
-        levels = std::max(levels, meas.events[size_t(group[i])].durLog - 2);
+        levels = std::max(levels, evs[size_t(group[i])].durLog - 2);
     }
 
     // Beam line through the stem tips of the outer notes, slope limited to one staff space.
@@ -535,7 +589,7 @@ void Builder::drawBeamGroup(PageLayout& pg, const Measure& meas, const StaffMeas
     };
     quad(sx.front() - stemW / 2, sx.back() + stemW / 2, 1);
     for (int level = 2; level <= levels; ++level) {
-        auto has = [&](size_t i) { return meas.events[size_t(group[i])].durLog - 2 >= level; };
+        auto has = [&](size_t i) { return evs[size_t(group[i])].durLog - 2 >= level; };
         for (size_t i = 0; i < n; ++i) {
             if (!has(i)) continue;
             const bool prev = i > 0 && has(i - 1);
@@ -566,11 +620,11 @@ void Builder::drawTie(int pageIdx, qreal x0, qreal x1, qreal yy, bool above)
     page(pageIdx).fills.push_back(p);
 }
 
-void Builder::handleTies(int pageIdx, int staff, const Event& e, const EventInfo& info, qreal x, qreal staffTop,
+void Builder::handleTies(int pageIdx, int staff, int voice, const Event& e, const EventInfo& info, qreal x, qreal staffTop,
                          qreal systemStartX, qreal systemEndX)
 {
     const qreal headW = m_font.advance(smufl::noteheadFor(e.durLog), m_sp);
-    auto& pending = m_pendingTies[size_t(staff)];
+    auto& pending = m_pendingTies[size_t(staff * kVoices + voice)];
 
     // Finish ties coming from the previous event of this staff.
     for (const PendingTie& t : pending) {
@@ -647,7 +701,7 @@ void Builder::drawSystem(const System& sys, int pageIdx, qreal left, qreal top, 
         for (int s = 0; s < nStaves; ++s) {
             const qreal st = top + s * staffDist();
             const Measure& meas = m_score.staves[size_t(s)].measures[size_t(m)];
-            const StaffMeasureInfo& smi = ms.staves[size_t(s)];
+            const StaffInfo& sinfo = ms.staves[size_t(s)];
             MeasureSlot slot;
             slot.page = pageIdx;
             slot.staff = s;
@@ -656,23 +710,29 @@ void Builder::drawSystem(const System& sys, int pageIdx, qreal left, qreal top, 
             slot.x1 = mx + w;
             slot.staffTop = st;
             slot.clef = m_score.staves[size_t(s)].clef;
-            if (meas.events.empty()) {
+            if (meas.isEmpty()) {
                 drawMeasureRest(pg, mx, mx + w, st);
-                m_pendingTies[size_t(s)].clear();
-            } else {
-                for (size_t k = 0; k < meas.events.size(); ++k) {
-                    const EventInfo& info = smi.events[k];
-                    const qreal ex = mx + ms.xAt(ms.indexOf(info.onset), sys.stretch);
-                    drawEvent(pg, meas.events[k], info, ex, st, info.beamGroup >= 0);
-                    handleTies(pageIdx, s, meas.events[k], info, ex, st, left + sys.headerW, xEnd);
-                    slot.eventX.push_back(ex);
-                }
-                for (const std::vector<int>& group : smi.beams) drawBeamGroup(pg, meas, smi, group, slot.eventX, st);
+                for (int v = 0; v < kVoices; ++v) m_pendingTies[size_t(s * kVoices + v)].clear();
             }
-            const size_t ai = ms.indexOf(smi.filled);
-            slot.appendX = ai + 1 < ms.onsets.size() || smi.filled < m_score.time.capacity()
-                               ? mx + ms.xAt(ai, sys.stretch)
-                               : mx + w - 1.6 * m_sp;
+            const qreal headW = m_font.advance(smufl::NoteheadBlack, m_sp);
+            for (int v = 0; v < kVoices; ++v) {
+                const std::vector<Event>& evs = meas.voice(v);
+                const StaffMeasureInfo& vi = sinfo.v[size_t(v)];
+                std::vector<qreal>& xs = slot.eventX[size_t(v)];
+                for (size_t k = 0; k < evs.size(); ++k) {
+                    const EventInfo& info = vi.events[k];
+                    const qreal ex = mx + ms.xAt(ms.indexOf(info.onset), sys.stretch) + (info.shiftRight ? 1.1 * headW : 0);
+                    drawEvent(pg, evs[k], info, ex, st, info.beamGroup >= 0);
+                    handleTies(pageIdx, s, v, evs[k], info, ex, st, left + sys.headerW, xEnd);
+                    xs.push_back(ex);
+                }
+                for (const std::vector<int>& group : vi.beams) drawBeamGroup(pg, evs, vi, group, xs, st);
+                if (evs.empty()) m_pendingTies[size_t(s * kVoices + v)].clear();
+                const size_t ai = ms.indexOf(vi.filled);
+                slot.appendX[size_t(v)] = ai + 1 < ms.onsets.size() || vi.filled < m_score.time.capacity()
+                                              ? mx + ms.xAt(ai, sys.stretch)
+                                              : mx + w - 1.6 * m_sp;
+            }
             m_layout.measureSlots.push_back(std::move(slot));
         }
         mx += w;
@@ -774,18 +834,20 @@ Layout Builder::run()
         for (int mm = sys.first; mm <= sys.last; ++mm) {
             const MeasureSpacing& ms = m_spacing[size_t(mm)];
             const Measure& upper = m_score.staves.front().measures[size_t(mm)];
-            for (size_t k = 0; k < ms.staves.front().events.size(); ++k) {
-                const EventInfo& e = ms.staves.front().events[k];
-                if (e.pos.empty()) continue;
-                const bool stem = upper.events[k].durLog >= 1 && e.stemUp;
-                top = std::max(top, e.pos.back() + (stem ? 7 : 1));
-            }
             const Measure& lower = m_score.staves[last].measures[size_t(mm)];
-            for (size_t k = 0; k < ms.staves[last].events.size(); ++k) {
-                const EventInfo& e = ms.staves[last].events[k];
-                if (e.pos.empty()) continue;
-                const bool stem = lower.events[k].durLog >= 1 && !e.stemUp;
-                bottom = std::min(bottom, e.pos.front() - (stem ? 7 : 1));
+            for (int v = 0; v < kVoices; ++v) {
+                const auto& ue = ms.staves.front().v[size_t(v)].events;
+                for (size_t k = 0; k < ue.size(); ++k) {
+                    if (ue[k].pos.empty()) continue;
+                    const bool stem = upper.voice(v)[k].durLog >= 1 && ue[k].stemUp;
+                    top = std::max(top, ue[k].pos.back() + (stem ? 7 : 1));
+                }
+                const auto& le = ms.staves[last].v[size_t(v)].events;
+                for (size_t k = 0; k < le.size(); ++k) {
+                    if (le[k].pos.empty()) continue;
+                    const bool stem = lower.voice(v)[k].durLog >= 1 && !le[k].stemUp;
+                    bottom = std::min(bottom, le[k].pos.front() - (stem ? 7 : 1));
+                }
             }
         }
         above = std::max(0.0, (top - 4) * m_sp / 2 - 3 * m_sp);

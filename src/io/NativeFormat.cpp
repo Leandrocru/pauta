@@ -72,17 +72,27 @@ bool saveNative(const Score& score, const QString& path, QString* error)
         w.writeAttribute("clef", clefKey(st.clef));
         for (const Measure& m : st.measures) {
             w.writeStartElement("measure");
-            for (const Event& e : m.events) {
-                w.writeStartElement(e.isRest() ? "rest" : "chord");
-                w.writeAttribute("dur", QString::number(e.durLog));
-                if (e.dots) w.writeAttribute("dots", QString::number(e.dots));
-                for (const Pitch& p : e.pitches) {
-                    w.writeEmptyElement("note");
-                    w.writeAttribute("step", QString(QChar::fromLatin1("CDEFGAB"[p.step])));
-                    w.writeAttribute("oct", QString::number(p.octave));
-                    if (p.alter) w.writeAttribute("alter", QString::number(p.alter));
-                    if (p.tie) w.writeAttribute("tie", QStringLiteral("1"));
+            auto writeEvents = [&](const std::vector<Event>& events) {
+                for (const Event& e : events) {
+                    w.writeStartElement(e.isRest() ? "rest" : "chord");
+                    w.writeAttribute("dur", QString::number(e.durLog));
+                    if (e.dots) w.writeAttribute("dots", QString::number(e.dots));
+                    for (const Pitch& p : e.pitches) {
+                        w.writeEmptyElement("note");
+                        w.writeAttribute("step", QString(QChar::fromLatin1("CDEFGAB"[p.step])));
+                        w.writeAttribute("oct", QString::number(p.octave));
+                        if (p.alter) w.writeAttribute("alter", QString::number(p.alter));
+                        if (p.tie) w.writeAttribute("tie", QStringLiteral("1"));
+                    }
+                    w.writeEndElement();
                 }
+            };
+            writeEvents(m.events); // layer 1 directly in <measure> (as in version 1 files)
+            for (int v = 1; v < kVoices; ++v) {
+                if (m.voice(v).empty()) continue;
+                w.writeStartElement("voice");
+                w.writeAttribute("n", QString::number(v + 1));
+                writeEvents(m.voice(v));
                 w.writeEndElement();
             }
             w.writeEndElement();
@@ -112,6 +122,7 @@ bool loadNative(Score& out, const QString& path, QString* error)
     Measure* measure = nullptr;
     Event* event = nullptr;
     bool sawRoot = false;
+    int voiceIdx = 0;
 
     while (!r.atEnd()) {
         const auto tok = r.readNext();
@@ -141,9 +152,11 @@ bool loadNative(Score& out, const QString& path, QString* error)
             } else if (n == u"measure" && staff) {
                 staff->measures.emplace_back();
                 measure = &staff->measures.back();
+            } else if (n == u"voice" && measure) {
+                voiceIdx = qBound(0, attrInt(a, "n", 1) - 1, kVoices - 1);
             } else if ((n == u"chord" || n == u"rest") && measure) {
-                measure->events.emplace_back();
-                event = &measure->events.back();
+                measure->voice(voiceIdx).emplace_back();
+                event = &measure->voice(voiceIdx).back();
                 event->durLog = qBound(-1, attrInt(a, "dur", 2), 6);
                 event->dots = qBound(0, attrInt(a, "dots", 0), 3);
             } else if (n == u"note" && event) {
@@ -161,8 +174,11 @@ bool loadNative(Score& out, const QString& path, QString* error)
             if (n == u"chord" || n == u"rest") {
                 if (event) event->sortPitches();
                 event = nullptr;
+            } else if (n == u"voice") {
+                voiceIdx = 0;
             } else if (n == u"measure") {
                 measure = nullptr;
+                voiceIdx = 0;
             } else if (n == u"staff") {
                 staff = nullptr;
             }

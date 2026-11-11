@@ -15,6 +15,7 @@ struct Cursor {
     int measure = 0;
     int index = 0;      // event index inside the measure; == size means "append"
     int diatonic = 34;  // pitch under the cursor (B4)
+    int voice = 0;      // active layer (0..3)
     bool operator==(const Cursor&) const = default;
 };
 
@@ -42,6 +43,7 @@ public:
     void setScore(Score s);                // replaces the document, clears history
     void setCursor(const Cursor& c);
     void setDurLog(int durLog) { m_durLog = durLog; emit cursorChanged(); }
+    void setVoice(int v);                  // active layer 0..3 (Finale: layers 1-4)
     void restore(const Score& s, const Cursor& c); // used by undo/redo
 
     // Note entry
@@ -99,6 +101,8 @@ private:
     bool mutate(const QString& text, const std::function<bool()>& fn);
     Measure& measure() { return m_score.staves[size_t(m_cursor.staff)].measures[size_t(m_cursor.measure)]; }
     const Measure& measure() const { return m_score.staves[size_t(m_cursor.staff)].measures[size_t(m_cursor.measure)]; }
+    std::vector<Event>& evs() { return measure().voice(m_cursor.voice); }
+    const std::vector<Event>& evs() const { return measure().voice(m_cursor.voice); }
     Event* currentEventMut();
     Event* targetEvent(); // current event, or the one just before the cursor
     Pitch cursorPitch() const;

@@ -72,6 +72,7 @@ private:
     QSpinBox* m_pageBox = nullptr;
     QSpinBox* m_measureBox = nullptr;
     QComboBox* m_zoomBox = nullptr;
+    QActionGroup* m_layerGroup = nullptr;
     Tool m_tool = Tool::SpeedyEntry;
     QString m_path;
     bool m_updatingNav = false;

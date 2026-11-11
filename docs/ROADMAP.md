@@ -25,7 +25,7 @@ Cada etapa termina com um programa utilizável.
 - [x] Janela inicial (assistente, em branco, abrir, demonstração) e impressão
 
 ## Etapa 2 — Formatos principais
-- [x] MusicXML (`.musicxml` / `.mxl`) — importar (uma voz por pauta; avisa o que simplificou)
+- [x] MusicXML (`.musicxml` / `.mxl`) — importar (até 4 vozes por pauta viram camadas; avisa o que simplificou)
 - [ ] MusicXML — exportar
 - [ ] MIDI (`.mid`) — importar (com quantização) e exportar
 - [ ] Reprodução com SoundFont (carregamento sob demanda)
@@ -33,7 +33,7 @@ Cada etapa termina com um programa utilizável.
 
 ## Etapa 3 — Gravação completa
 - [ ] Mudança de fórmula, armadura e clave no meio da partitura
-- [ ] Várias vozes por pauta (camadas, como no Finale)
+- [x] Várias vozes por pauta: 4 camadas como no Finale (Alt+1–4), hastes por camada, notas deslocadas em uníssono/segunda, acidentes compartilhados
 - [ ] Ligaduras de expressão, dinâmicas, articulações
 - [ ] Chaves e colchetes de grupo, abreviações de instrumento
 - [ ] Layout incremental (re-gravar só o sistema afetado)

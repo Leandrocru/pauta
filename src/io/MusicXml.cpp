@@ -40,7 +40,7 @@ bool fracToDuration(Frac f, int& durLog, int& dots)
 }
 
 // Fills a gap with the fewest rests (largest values first).
-void appendRests(Measure& m, Frac gap)
+void appendRests(std::vector<Event>& events, Frac gap)
 {
     while (gap > Frac(0)) {
         int l = -1;
@@ -48,7 +48,7 @@ void appendRests(Measure& m, Frac gap)
         if (durationOf(l, 0) > gap) break; // smaller than a 64th: drop
         Event e;
         e.durLog = l;
-        m.events.push_back(e);
+        events.push_back(e);
         gap -= durationOf(l, 0);
     }
 }
@@ -107,9 +107,7 @@ QByteArray readScoreBytes(const QString& path, QString* error)
 // Per-staff state while reading one measure.
 struct StaffState {
     Measure measure;
-    QString mainVoice;      // only one voice per staff is kept (the first one seen)
-    Frac filled;            // time reached by the kept voice
-    bool lastWasRest = true;
+    std::array<Frac, kVoices> filled; // time reached by each layer
     bool wholeMeasureRest = false;
 };
 
@@ -186,6 +184,7 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
     for (QDomElement part = root.firstChildElement(QStringLiteral("part")); !part.isNull();
          part = part.nextSiblingElement(QStringLiteral("part"))) {
         std::vector<Staff> staves(1);
+        std::vector<std::vector<QString>> voiceIds(8); // per staff: MusicXML voice id of each layer
         int divisions = 1;
         bool firstMeasure = true;
 
@@ -247,8 +246,17 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
                     StaffState& ss = st[size_t(staffIndex(el))];
                     QString voice = childText(el, QStringLiteral("voice"));
                     if (voice.isEmpty()) voice = QStringLiteral("1");
-                    if (ss.mainVoice.isEmpty()) ss.mainVoice = voice;
-                    if (voice != ss.mainVoice) { ++droppedNotes; continue; }
+                    // Each MusicXML voice of this staff becomes a layer (up to four).
+                    // The voice->layer mapping is kept for the whole part so ties stay in one layer.
+                    auto& ids = voiceIds[size_t(staffIndex(el))];
+                    auto vit = std::find(ids.begin(), ids.end(), voice);
+                    if (vit == ids.end()) {
+                        if (int(ids.size()) >= kVoices) { ++droppedNotes; continue; }
+                        ids.push_back(voice);
+                        vit = ids.end() - 1;
+                    }
+                    const int L = int(vit - ids.begin());
+                    std::vector<Event>& layer = ss.measure.voice(L);
 
                     const QDomElement restEl = el.firstChildElement(QStringLiteral("rest"));
                     const bool isRest = !restEl.isNull();
@@ -266,15 +274,15 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
                     }
 
                     if (chord) {
-                        if (!isRest && !ss.measure.events.empty() && !ss.measure.events.back().isRest()) {
-                            ss.measure.events.back().pitches.push_back(p);
-                            ss.measure.events.back().sortPitches();
+                        if (!isRest && !layer.empty() && !layer.back().isRest()) {
+                            layer.back().pitches.push_back(p);
+                            layer.back().sortPitches();
                         }
                         continue;
                     }
 
                     // Gap before this note in the kept voice (e.g. after <forward>): fill with rests.
-                    if (start > ss.filled) appendRests(ss.measure, start - ss.filled);
+                    if (start > ss.filled[size_t(L)]) appendRests(layer, start - ss.filled[size_t(L)]);
 
                     Event ev;
                     const int tl = typeToLog(childText(el, QStringLiteral("type")));
@@ -286,24 +294,27 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
                         ev.dots = std::min(dots, 3);
                     } else if (isRest && restEl.attribute(QStringLiteral("measure")) == u"yes") {
                         ss.wholeMeasureRest = true;
-                        ss.filled = std::max(ss.filled, start + dur);
+                        ss.filled[size_t(L)] = std::max(ss.filled[size_t(L)], start + dur);
                         continue;
                     } else if (!fracToDuration(dur, ev.durLog, ev.dots)) {
-                        appendRests(ss.measure, dur); // odd length rest/note: approximate with rests
-                        ss.filled = start + dur;
+                        appendRests(layer, dur); // odd length rest/note: approximate with rests
+                        ss.filled[size_t(L)] = start + dur;
                         continue;
                     }
                     if (!isRest) ev.pitches = { p };
-                    ss.measure.events.push_back(std::move(ev));
-                    ss.filled = start + dur;
+                    layer.push_back(std::move(ev));
+                    ss.filled[size_t(L)] = start + dur;
                 }
             }
 
             for (size_t k = 0; k < staves.size(); ++k) {
                 Measure m = k < st.size() ? std::move(st[k].measure) : Measure{};
                 // A measure that only holds rests filling it is shown as the usual whole-measure rest.
-                const bool allRests = std::all_of(m.events.begin(), m.events.end(), [](const Event& e) { return e.isRest(); });
-                if (allRests) m.events.clear();
+                // A layer holding only rests is shown as nothing (layer 1: the usual whole-measure rest).
+                for (int v = 0; v < kVoices; ++v) {
+                    auto& evs = m.voice(v);
+                    if (std::all_of(evs.begin(), evs.end(), [](const Event& e) { return e.isRest(); })) evs.clear();
+                }
                 staves[k].measures.push_back(std::move(m));
             }
             firstMeasure = false;
@@ -324,7 +335,7 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
     if (s.title.isEmpty()) s.title = QFileInfo(path).completeBaseName();
 
     if (warnings) {
-        if (droppedNotes) warnings->append(QStringLiteral("%1 nota(s) de vozes secundárias foram omitidas (o Pauta ainda tem uma voz por pauta).").arg(droppedNotes));
+        if (droppedNotes) warnings->append(QStringLiteral("%1 nota(s) de vozes secundárias foram omitidas (o Pauta tem até quatro camadas por pauta).").arg(droppedNotes));
         if (graceNotes) warnings->append(QStringLiteral("%1 apojatura(s) foram omitidas.").arg(graceNotes));
         if (tuplets) warnings->append(QStringLiteral("Há quiálteras: as notas foram mantidas, mas ainda sem o número/colchete de quiáltera."));
         if (keyChanged) warnings->append(QStringLiteral("Mudanças de armadura no meio da peça foram ignoradas."));

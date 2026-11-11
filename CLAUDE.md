@@ -12,14 +12,14 @@ Interface e mensagens em **português do Brasil**. Comentários no código em in
 - Roteiro em `docs/ROADMAP.md` (marque o que concluir). Formato `.pauta` em `docs/FORMATO.md`.
 
 ## Arquitetura (`src/`)
-- `model/` — `Score → Staff → Measure → Event(pitches|rest)`; utilitários de altura/clave/armadura.
+- `model/` — `Score → Staff → Measure → Event(pitches|rest)`; `Measure` tem 4 camadas (`events` = camada 1, `voice(v)` acessa qualquer uma); utilitários de altura/clave/armadura.
 - `render/Engraver` — função pura `Score → Layout` (espaçamento, sistemas, páginas, primitivas por página).
 - `render/Renderer` — pinta um `PageLayout` (glifos em um único `QGlyphRun`), exporta PDF/PNG.
 - `edit/Editor` — cursor, entrada estilo Speedy Entry, desfazer por snapshot (`QUndoStack`).
 - `ui/` — `MainWindow` (menus, paletas, barra de navegação), `ScoreView` (só pinta páginas visíveis; mouse e teclado conforme a ferramenta), `Tools.h` (lista de ferramentas), `Icons` (ícones próprios desenhados em tempo de execução), `LaunchDialog`, `NewScoreDialog`.
 - Interface: organização inspirada no Finale, mas ícones e arte são próprios (nunca copiar os do Finale).
 - `io/NativeFormat` — leitura/gravação do `.pauta` (XML).
-- `io/MusicXml` — importação MusicXML (partwise; `.mxl` via `QZipReader` privado do Qt). Hoje mantém só a primeira voz de cada pauta e avisa o que simplificou. Arquivo de teste: `tests/data/piano-teste.musicxml` (+ `.mxl`), usado também no CI.
+- `io/MusicXml` — importação MusicXML (partwise; `.mxl` via `QZipReader` privado do Qt). Cada voz MusicXML de uma pauta vira uma camada (até 4; mapeamento fixo por parte) e avisa o que simplificou. Arquivo de teste: `tests/data/piano-teste.musicxml` (+ `.mxl`), usado também no CI.
 
 ## Compilar
 - **Windows** (máquina do dono): `build.cmd` (Release em `build\Pauta.exe`), `build.cmd dist` (pasta portátil).

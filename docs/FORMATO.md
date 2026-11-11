@@ -25,5 +25,6 @@ XML UTF-8, legível e editável à mão.
 - `tie="1"` em `<note>`: ligadura de valor com a mesma nota no próximo evento da pauta.
 - `alter` em `<note>`: -2..2 (bemol duplo … sustenido duplo). A nota escrita é
   sempre explícita; a armadura só decide quais acidentes aparecem.
+- Camadas (vozes, como no Finale): a camada 1 fica direto em `<measure>`; as camadas 2–4 ficam em `<voice n="2">…</voice>` dentro do compasso.
 - Todas as pautas têm o mesmo número de compassos.
 - Arquivos com `version` maior que a suportada são recusados.

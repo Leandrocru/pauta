@@ -9,6 +9,7 @@
 #include <QPointF>
 #include <QRectF>
 #include <QString>
+#include <array>
 #include <vector>
 
 namespace pauta {
@@ -44,8 +45,8 @@ struct MeasureSlot {
     qreal x0 = 0, x1 = 0;       // horizontal extent of the measure
     qreal staffTop = 0;         // y of the top staff line
     Clef clef = Clef::Treble;
-    std::vector<qreal> eventX;  // x of each event's notehead
-    qreal appendX = 0;          // x where a new event would be placed
+    std::array<std::vector<qreal>, kVoices> eventX{}; // x of each event's notehead, per layer
+    std::array<qreal, kVoices> appendX{};             // x where a new event would go, per layer
 };
 
 struct Layout {

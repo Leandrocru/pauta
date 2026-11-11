@@ -20,6 +20,15 @@ namespace pauta {
 
 namespace {
 const QColor kAccent(30, 111, 217);
+
+// Layer colours, as Finale users know them: 1 black-ish blue, 2 red, 3 green, 4 blue.
+QColor layerColor(int v, int alpha = 255)
+{
+    static const QColor c[4] = { QColor(30, 111, 217), QColor(214, 40, 40), QColor(30, 150, 60), QColor(40, 70, 200) };
+    QColor k = c[std::clamp(v, 0, 3)];
+    k.setAlpha(alpha);
+    return k;
+}
 }
 
 ScoreView::ScoreView(Editor* editor, QWidget* parent) : QWidget(parent), m_ed(editor)
@@ -194,7 +203,7 @@ QRectF ScoreView::cursorRectOnPage(int* page) const
     if (!s) return {};
     if (page) *page = s->page;
     const qreal sp = m_layout.sp;
-    const qreal x = c.index < int(s->eventX.size()) ? s->eventX[size_t(c.index)] : s->appendX;
+    const qreal x = c.index < int(s->eventX[size_t(c.voice)].size()) ? s->eventX[size_t(c.voice)][size_t(c.index)] : s->appendX[size_t(c.voice)];
     const int pos = staffPosition(c.diatonic, s->clef);
     const qreal y = m_layout.yForPosition(*s, pos);
     const qreal top = std::min(s->staffTop - 3 * sp, y - sp);
@@ -208,21 +217,21 @@ void ScoreView::paintSpeedy(QPainter& p, int page)
     const MeasureSlot* s = m_layout.slot(c.staff, c.measure);
     if (!s || s->page != page) return;
     const qreal sp = m_layout.sp;
-    const bool onEvent = c.index < int(s->eventX.size());
-    const qreal x = onEvent ? s->eventX[size_t(c.index)] : s->appendX;
+    const bool onEvent = c.index < int(s->eventX[size_t(c.voice)].size());
+    const qreal x = onEvent ? s->eventX[size_t(c.voice)][size_t(c.index)] : s->appendX[size_t(c.voice)];
     const int pos = staffPosition(c.diatonic, s->clef);
     const qreal y = m_layout.yForPosition(*s, pos);
 
     p.save();
     // Editing frame around the active measure (Speedy Entry style).
-    QPen frame(kAccent);
+    QPen frame(layerColor(c.voice));
     frame.setWidthF(0.18 * sp);
     p.setPen(frame);
-    p.setBrush(QColor(30, 111, 217, 14));
+    p.setBrush(layerColor(c.voice, 14));
     p.drawRect(QRectF(s->x0 + 0.15 * sp, s->staffTop - 2.5 * sp, s->x1 - s->x0 - 0.3 * sp, 9 * sp));
 
     // Vertical insertion bar.
-    QPen bar(QColor(30, 111, 217, onEvent ? 70 : 170));
+    QPen bar(layerColor(c.voice, onEvent ? 70 : 170));
     bar.setWidthF(onEvent ? 2.6 * sp : 0.25 * sp);
     bar.setCapStyle(Qt::FlatCap);
     p.setPen(bar);
@@ -242,7 +251,7 @@ void ScoreView::paintSpeedy(QPainter& p, int page)
     run.setRawFont(smufl::Font::instance().rawFont(sp));
     run.setGlyphIndexes({ smufl::Font::instance().glyphIndex(smufl::noteheadFor(m_ed->durLog())) });
     run.setPositions({ QPointF(x, y) });
-    p.setPen(QColor(30, 111, 217, 200));
+    p.setPen(layerColor(c.voice, 200));
     p.drawGlyphRun(QPointF(0, 0), run);
     p.restore();
 }
@@ -348,6 +357,11 @@ bool ScoreView::entryKeys(QKeyEvent* e)
 
 void ScoreView::keyPressEvent(QKeyEvent* e)
 {
+    // Alt+1..4 chooses the active layer in every tool (as Finale's layer selector).
+    if ((e->modifiers() & Qt::AltModifier) && e->key() >= Qt::Key_1 && e->key() <= Qt::Key_4) {
+        m_ed->setVoice(e->key() - Qt::Key_1);
+        return;
+    }
     switch (m_tool) {
     case Tool::SpeedyEntry:
     case Tool::SimpleEntry:
@@ -376,8 +390,8 @@ void ScoreView::simpleEntryClick(const Hit& h)
     c.measure = s.measure;
     c.diatonic = h.diatonic;
     // Clicking on an existing note column adds/removes that pitch (chord); elsewhere inserts.
-    for (size_t k = 0; k < s.eventX.size(); ++k) {
-        if (std::abs(h.pagePt.x() - (s.eventX[k] + 0.6 * sp)) < 1.0 * sp) {
+    for (size_t k = 0; k < s.eventX[size_t(c.voice)].size(); ++k) {
+        if (std::abs(h.pagePt.x() - (s.eventX[size_t(c.voice)][k] + 0.6 * sp)) < 1.0 * sp) {
             c.index = int(k);
             m_ed->setCursor(c);
             if (m_simpleRest) m_ed->enterRest();
@@ -386,7 +400,7 @@ void ScoreView::simpleEntryClick(const Hit& h)
         }
     }
     c.index = 0;
-    while (c.index < int(s.eventX.size()) && s.eventX[size_t(c.index)] < h.pagePt.x()) ++c.index;
+    while (c.index < int(s.eventX[size_t(c.voice)].size()) && s.eventX[size_t(c.voice)][size_t(c.index)] < h.pagePt.x()) ++c.index;
     m_ed->setCursor(c);
     if (m_simpleRest) m_ed->enterRest();
     else m_ed->enterAtCursorPitch();
@@ -428,9 +442,9 @@ void ScoreView::mousePressEvent(QMouseEvent* e)
         Cursor c = m_ed->cursor();
         c.staff = h.slot->staff;
         c.measure = h.slot->measure;
-        c.index = int(h.slot->eventX.size());
-        for (size_t k = 0; k < h.slot->eventX.size(); ++k)
-            if (h.pagePt.x() < h.slot->eventX[k] + 1.6 * sp) { c.index = int(k); break; }
+        c.index = int(h.slot->eventX[size_t(c.voice)].size());
+        for (size_t k = 0; k < h.slot->eventX[size_t(c.voice)].size(); ++k)
+            if (h.pagePt.x() < h.slot->eventX[size_t(c.voice)][k] + 1.6 * sp) { c.index = int(k); break; }
         c.diatonic = h.diatonic;
         m_ed->setCursor(c);
         return;
