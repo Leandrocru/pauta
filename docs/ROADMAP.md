@@ -11,6 +11,18 @@ Cada etapa termina com um programa utilizável.
 - [ ] Barras de ligação (colchetes de colcheias)
 - [ ] Ligaduras de valor (L) e quiálteras
 
+## Interface no estilo do Finale ✅ (v0.2)
+- [x] Paleta principal de ferramentas (ferramenta ativa decide o clique; as não prontas aparecem desativadas)
+- [x] Menu da ferramenta ativa na barra de menus
+- [x] Menus Arquivo, Editar, Utilitários, Exibir, Documento, MIDI/Áudio, Plug-ins, Janela, Ajuda
+- [x] Paleta de Entrada simples (encaixável/flutuante) com nota fantasma sob o mouse
+- [x] Moldura de edição da Entrada rápida
+- [x] Seleção de compassos (clique, arraste, Shift+clique), limpar conteúdo
+- [x] Ferramentas Zoom, Mão, Pauta, Clave, Armadura, Fórmula de compasso, Compasso
+- [x] Visualização de página / contínua (Ctrl+E)
+- [x] Barra inferior: página, compasso, zoom, controles de reprodução (desativados)
+- [x] Janela inicial (assistente, em branco, abrir, demonstração) e impressão
+
 ## Etapa 2 — Formatos principais
 - [ ] MusicXML (`.musicxml` / `.mxl`) — importar e exportar
 - [ ] MIDI (`.mid`) — importar (com quantização) e exportar

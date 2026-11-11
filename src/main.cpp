@@ -73,7 +73,10 @@ int main(int argc, char* argv[])
     QCommandLineOption keysOpt(QStringLiteral("test-keys"), QStringLiteral("(teste) Digita uma sequência de teclas."), QStringLiteral("teclas"));
     QCommandLineOption grabOpt(QStringLiteral("grab"), QStringLiteral("(teste) Salva uma captura da janela e sai."), QStringLiteral("arquivo.png"));
     QCommandLineOption savePauta(QStringLiteral("save-to"), QStringLiteral("(teste) Com --grab, salva a partitura."), QStringLiteral("arquivo.pauta"));
-    cli.addOptions({ pdfOpt, pngOpt, benchOpt, emptyOpt, keysOpt, grabOpt, savePauta });
+    QCommandLineOption toolOpt(QStringLiteral("tool"), QStringLiteral("(teste) Ferramenta ativa (índice)."), QStringLiteral("n"));
+    QCommandLineOption scrollOpt(QStringLiteral("scroll-view"), QStringLiteral("(teste) Visualização contínua."));
+    QCommandLineOption selectOpt(QStringLiteral("select-all"), QStringLiteral("(teste) Seleciona tudo."));
+    cli.addOptions({ pdfOpt, pngOpt, benchOpt, emptyOpt, keysOpt, grabOpt, savePauta, toolOpt, scrollOpt, selectOpt });
     cli.addPositionalArgument(QStringLiteral("partitura"), QStringLiteral("Arquivo .pauta a abrir."));
     cli.process(app);
 
@@ -121,11 +124,18 @@ int main(int argc, char* argv[])
         w.editor()->setScore(Score::makeEmpty(QStringLiteral("Teste"),
                                               { { QStringLiteral("Piano"), Clef::Treble }, { QString(), Clef::Bass } },
                                               TimeSig{ 4, 4 }, 0, 8));
+    const bool testMode = cli.isSet(keysOpt) || cli.isSet(grabOpt);
+    if (testMode) {
+        w.setTool(cli.isSet(toolOpt) ? Tool(cli.value(toolOpt).toInt()) : Tool::SpeedyEntry);
+        if (cli.isSet(scrollOpt)) w.view()->setContinuous(true);
+    }
     w.show();
+    if (!testMode && args.isEmpty() && !cli.isSet(emptyOpt)) w.runLaunchWindow();
 
     // Test hooks: type a key sequence into the score view and/or save a screenshot of the window.
-    if (cli.isSet(keysOpt) || cli.isSet(grabOpt)) {
+    if (testMode) {
         QApplication::processEvents();
+        if (cli.isSet(selectOpt)) w.editor()->selectAll();
         if (cli.isSet(keysOpt)) {
             for (const QString& tok : cli.value(keysOpt).split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
                 const QKeySequence seq = QKeySequence::fromString(tok, QKeySequence::PortableText);

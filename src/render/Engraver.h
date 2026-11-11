@@ -8,6 +8,7 @@ struct EngraveOptions {
     qreal pageHeight = 841.89;
     qreal margin = 42.5;       // 15 mm
     qreal sp = 5.0;            // staff space (staff height = 4 sp ≈ 7 mm)
+    bool continuous = false;   // scroll view: one endless system instead of pages
 };
 
 // Turns a Score into a page Layout. Pure function of its inputs (no global state besides the font).

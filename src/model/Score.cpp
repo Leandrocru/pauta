@@ -158,6 +158,17 @@ QString durationName(int durLog)
     return QString();
 }
 
+QString keyName(int fifths)
+{
+    static const char* majors[15] = { "Dó♭", "Sol♭", "Ré♭", "Lá♭", "Mi♭", "Si♭", "Fá", "Dó", "Sol", "Ré", "Lá", "Mi", "Si", "Fá♯", "Dó♯" };
+    static const char* minors[15] = { "lá♭", "mi♭", "si♭", "fá", "dó", "sol", "ré", "lá", "mi", "si", "fá♯", "dó♯", "sol♯", "ré♯", "lá♯" };
+    fifths = std::clamp(fifths, -7, 7);
+    const QString acc = fifths == 0 ? QStringLiteral("sem acidentes")
+                                    : QStringLiteral("%1 %2").arg(std::abs(fifths)).arg(fifths > 0 ? QStringLiteral("♯") : QStringLiteral("♭"));
+    return QStringLiteral("%1 maior / %2 menor (%3)")
+        .arg(QString::fromUtf8(majors[fifths + 7]), QString::fromUtf8(minors[fifths + 7]), acc);
+}
+
 QString clefName(Clef clef)
 {
     switch (clef) {

@@ -8,7 +8,7 @@ o maior número possível de formatos de partitura.
 > inspiração é só no modo de trabalhar (ferramentas por modo, entrada rápida
 > pelo teclado).
 
-## Estado atual (etapa 1)
+## Estado atual (v0.2)
 
 - Modelo musical com durações exatas (frações), acordes, pausas, pontos e acidentes
 - Várias pautas por sistema (piano, coro SATB, quarteto de cordas, etc.)
@@ -17,7 +17,8 @@ o maior número possível de formatos de partitura.
   com colunas, segundas em acordes, armaduras e fórmulas de compasso
 - Desenho com a fonte SMuFL **Bravura**: todos os símbolos de uma página saem
   numa única chamada de desenho, e só as páginas visíveis são desenhadas
-- Entrada de notas no estilo Speedy Entry (veja **Ajuda → Atalhos**, ou F1)
+- Interface organizada como a do Finale: paleta principal de ferramentas, menu da ferramenta ativa, paleta de Entrada simples, Entrada rápida pelo teclado (F1 mostra os atalhos), seleção de compassos, visualização de página/contínua (Ctrl+E), barra de navegação
+- Ferramentas de Pauta, Clave, Armadura, Fórmula de compasso (com redistribuição das notas) e Compasso
 - Desfazer/refazer ilimitado
 - Formato próprio `.pauta` (XML aberto, veja `docs/FORMATO.md`)
 - Exportação em PDF vetorial

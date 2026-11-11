@@ -54,15 +54,7 @@ NewScoreDialog::NewScoreDialog(QWidget* parent) : QDialog(parent)
     m_beatType->setCurrentIndex(2);
 
     m_key = new QComboBox;
-    static const char* majors[15] = { "Dó♭", "Sol♭", "Ré♭", "Lá♭", "Mi♭", "Si♭", "Fá", "Dó", "Sol", "Ré", "Lá", "Mi", "Si", "Fá♯", "Dó♯" };
-    static const char* minors[15] = { "lá♭", "mi♭", "si♭", "fá", "dó", "sol", "ré", "lá", "mi", "si", "fá♯", "dó♯", "sol♯", "ré♯", "lá♯" };
-    for (int f = -7; f <= 7; ++f) {
-        const QString acc = f == 0 ? QStringLiteral("sem acidentes")
-                                   : QStringLiteral("%1 %2").arg(std::abs(f)).arg(f > 0 ? "♯" : "♭");
-        m_key->addItem(QStringLiteral("%1 maior / %2 menor (%3)")
-                           .arg(QString::fromUtf8(majors[f + 7]), QString::fromUtf8(minors[f + 7]), acc),
-                       f);
-    }
+    for (int f = -7; f <= 7; ++f) m_key->addItem(keyName(f), f);
     m_key->setCurrentIndex(7);
 
     m_measures = new QSpinBox;

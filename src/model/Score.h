@@ -69,5 +69,6 @@ int keyAlterFor(int step, int keyFifths);    // alteration implied by the key si
 QString pitchName(const Pitch& p);           // e.g. "Fá♯4"
 QString durationName(int durLog);            // e.g. "Semínima"
 QString clefName(Clef clef);
+QString keyName(int fifths);                 // e.g. "Sol maior / mi menor (1 ♯)"
 
 } // namespace pauta

@@ -1,9 +1,15 @@
 #pragma once
+#include "ui/Tools.h"
+
 #include <QMainWindow>
 
-class QLabel;
-class QScrollArea;
 class QActionGroup;
+class QComboBox;
+class QLabel;
+class QMenu;
+class QScrollArea;
+class QSpinBox;
+class QToolBar;
 
 namespace pauta {
 
@@ -18,29 +24,56 @@ public:
     Editor* editor() const { return m_editor; }
     ScoreView* view() const { return m_view; }
 
+    void setTool(Tool t);
+    void runLaunchWindow(); // start-up chooser (wizard / open / demo)
+
 protected:
     void closeEvent(QCloseEvent* e) override;
 
 private:
     void buildMenus();
-    void buildPalette();
+    void buildToolPalette();
+    void buildSimplePalette();
+    void buildNavigationBar();
+    void rebuildToolMenu();
     void updateStatus();
     void updateTitle();
+    void updateNavigation();
     bool maybeSave();
     bool save();
     bool saveAs();
     void newScore();
     void open();
     void exportPdf();
+    void print();
+    void documentSetup();
     void showShortcuts();
+    void onToolClicked(Tool tool, int staff, int measure);
+    void chooseKey();
+    void chooseTime();
+    void editStaff(int staff);
+    void addStaffDialog();
+    void addMeasuresDialog();
+    void comingSoon(const QString& what);
 
     Editor* m_editor;
     ScoreView* m_view;
     QScrollArea* m_scroll;
     QLabel* m_status;
     QLabel* m_perf;
+    QToolBar* m_toolPalette = nullptr;
+    QActionGroup* m_toolGroup = nullptr;
     QActionGroup* m_durGroup = nullptr;
+    QAction* m_restAction = nullptr;
+    QMenu* m_toolMenu = nullptr;
+    QMenu* m_windowMenu = nullptr;
+    QAction* m_continuousAction = nullptr;
+    QSpinBox* m_pageBox = nullptr;
+    QSpinBox* m_measureBox = nullptr;
+    QComboBox* m_zoomBox = nullptr;
+    Tool m_tool = Tool::SpeedyEntry;
     QString m_path;
+    bool m_updatingNav = false;
 };
 
 } // namespace pauta

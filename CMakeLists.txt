@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.21)
-project(Pauta VERSION 0.1.0 LANGUAGES CXX)
+project(Pauta VERSION 0.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Gui)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Gui PrintSupport)
 qt_standard_project_setup()
 
 qt_add_executable(Pauta WIN32
@@ -29,6 +29,11 @@ qt_add_executable(Pauta WIN32
     src/ui/ScoreView.cpp
     src/ui/NewScoreDialog.h
     src/ui/NewScoreDialog.cpp
+    src/ui/Tools.h
+    src/ui/Icons.h
+    src/ui/Icons.cpp
+    src/ui/LaunchDialog.h
+    src/ui/LaunchDialog.cpp
 )
 
 qt_add_resources(Pauta "fonts"
@@ -38,7 +43,7 @@ qt_add_resources(Pauta "fonts"
 
 target_include_directories(Pauta PRIVATE src)
 target_compile_definitions(Pauta PRIVATE PROJECT_VERSION_STRING="${PROJECT_VERSION}")
-target_link_libraries(Pauta PRIVATE Qt6::Widgets Qt6::Gui)
+target_link_libraries(Pauta PRIVATE Qt6::Widgets Qt6::Gui Qt6::PrintSupport)
 
 if(MSVC)
     target_compile_options(Pauta PRIVATE /W4 /permissive- /utf-8)

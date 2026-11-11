@@ -44,6 +44,7 @@ void Editor::setScore(Score s)
 {
     m_score = std::move(s);
     m_undo.clear();
+    m_sel = Selection{};
     m_cursor = Cursor{};
     m_cursor.diatonic = clefMiddleLine(m_score.staves.empty() ? Clef::Treble : m_score.staves.front().clef);
     emit scoreChanged();
@@ -73,6 +74,8 @@ void Editor::clampCursor()
     m_cursor.measure = std::clamp(m_cursor.measure, 0, m_score.measureCount() - 1);
     m_cursor.index = std::clamp(m_cursor.index, 0, int(measure().events.size()));
     m_cursor.diatonic = std::clamp(m_cursor.diatonic, 7, 7 * 8 + 6);
+    if (m_sel.active && (m_sel.staff1 >= int(m_score.staves.size()) || m_sel.measure1 >= m_score.measureCount()))
+        m_sel.active = false;
 }
 
 bool Editor::mutate(const QString& text, const std::function<bool()>& fn)
@@ -392,6 +395,182 @@ void Editor::deleteMeasure()
         if (m_score.measureCount() <= 1) return false;
         for (Staff& s : m_score.staves) s.measures.erase(s.measures.begin() + m_cursor.measure);
         m_cursor.index = 0;
+        return true;
+    });
+}
+
+void Editor::deleteSelectedMeasures()
+{
+    if (!m_sel.active) { deleteMeasure(); return; }
+    const int a = m_sel.measure0, b = m_sel.measure1;
+    mutate(QStringLiteral("Excluir compassos"), [&] {
+        if (b - a + 1 >= m_score.measureCount()) {
+            emit message(QStringLiteral("A partitura precisa de pelo menos um compasso."));
+            return false;
+        }
+        for (Staff& s : m_score.staves) s.measures.erase(s.measures.begin() + a, s.measures.begin() + b + 1);
+        m_cursor.measure = std::min(a, m_score.measureCount() - 1);
+        m_cursor.index = 0;
+        m_sel.active = false;
+        return true;
+    });
+    emit selectionChanged();
+}
+
+void Editor::insertMeasuresBefore(int n)
+{
+    const int at = m_sel.active ? m_sel.measure0 : m_cursor.measure;
+    mutate(QStringLiteral("Inserir compassos"), [&] {
+        if (n <= 0) return false;
+        for (Staff& s : m_score.staves) s.measures.insert(s.measures.begin() + at, size_t(n), Measure{});
+        return true;
+    });
+}
+
+void Editor::setSelection(const Selection& s)
+{
+    m_sel = s;
+    if (m_sel.active) {
+        if (m_sel.staff0 > m_sel.staff1) std::swap(m_sel.staff0, m_sel.staff1);
+        if (m_sel.measure0 > m_sel.measure1) std::swap(m_sel.measure0, m_sel.measure1);
+        m_sel.staff0 = std::clamp(m_sel.staff0, 0, int(m_score.staves.size()) - 1);
+        m_sel.staff1 = std::clamp(m_sel.staff1, 0, int(m_score.staves.size()) - 1);
+        m_sel.measure0 = std::clamp(m_sel.measure0, 0, m_score.measureCount() - 1);
+        m_sel.measure1 = std::clamp(m_sel.measure1, 0, m_score.measureCount() - 1);
+    }
+    emit selectionChanged();
+}
+
+void Editor::selectAll()
+{
+    setSelection(Selection{ true, 0, int(m_score.staves.size()) - 1, 0, m_score.measureCount() - 1 });
+}
+
+void Editor::clearSelection()
+{
+    if (!m_sel.active) return;
+    m_sel.active = false;
+    emit selectionChanged();
+}
+
+void Editor::clearSelectionContents()
+{
+    if (!m_sel.active) return;
+    mutate(QStringLiteral("Limpar compassos"), [&] {
+        for (int s = m_sel.staff0; s <= m_sel.staff1; ++s)
+            for (int m = m_sel.measure0; m <= m_sel.measure1; ++m)
+                m_score.staves[size_t(s)].measures[size_t(m)].events.clear();
+        return true;
+    });
+}
+
+void Editor::setKeySignature(int fifths)
+{
+    mutate(QStringLiteral("Armadura de clave"), [&] {
+        fifths = std::clamp(fifths, -7, 7);
+        if (fifths == m_score.keyFifths) return false;
+        // Keep the music diatonic: notes that followed the old key follow the new one.
+        for (Staff& st : m_score.staves)
+            for (Measure& m : st.measures)
+                for (Event& e : m.events)
+                    for (Pitch& p : e.pitches)
+                        if (p.alter == keyAlterFor(p.step, m_score.keyFifths)) p.alter = keyAlterFor(p.step, fifths);
+        m_score.keyFifths = fifths;
+        return true;
+    });
+}
+
+void Editor::setTimeSignature(TimeSig t)
+{
+    mutate(QStringLiteral("Fórmula de compasso"), [&] {
+        if (t.beats == m_score.time.beats && t.beatType == m_score.time.beatType) return false;
+        // Rebar: pour every staff's events into measures of the new length (events that do not
+        // fit at the end of a measure move to the next one).
+        const Frac cap = t.capacity();
+        size_t maxMeasures = 1;
+        std::vector<std::vector<Measure>> rebarred;
+        for (Staff& st : m_score.staves) {
+            std::vector<Measure> out(1);
+            for (Measure& m : st.measures) {
+                if (m.events.empty()) { // keep empty measures as empty measures (whole-measure rests)
+                    if (!out.back().events.empty()) out.emplace_back();
+                    out.emplace_back();
+                    continue;
+                }
+                for (Event& e : m.events) {
+                    if (out.back().filled() + e.duration() > cap && !out.back().events.empty()) out.emplace_back();
+                    out.back().events.push_back(std::move(e));
+                    if (out.back().filled() >= cap) out.emplace_back();
+                }
+            }
+            while (out.size() > 1 && out.back().events.empty()) out.pop_back();
+            maxMeasures = std::max(maxMeasures, out.size());
+            rebarred.push_back(std::move(out));
+        }
+        maxMeasures = std::max(maxMeasures, size_t(m_score.measureCount()));
+        for (size_t s = 0; s < m_score.staves.size(); ++s) {
+            rebarred[s].resize(maxMeasures);
+            m_score.staves[s].measures = std::move(rebarred[s]);
+        }
+        m_score.time = t;
+        m_cursor.index = 0;
+        return true;
+    });
+}
+
+void Editor::setClef(int staff, Clef clef)
+{
+    mutate(QStringLiteral("Clave"), [&] {
+        if (staff < 0 || staff >= int(m_score.staves.size()) || m_score.staves[size_t(staff)].clef == clef) return false;
+        const int shift = clefMiddleLine(clef) - clefMiddleLine(m_score.staves[size_t(staff)].clef);
+        m_score.staves[size_t(staff)].clef = clef;
+        if (staff == m_cursor.staff) m_cursor.diatonic += shift;
+        return true;
+    });
+}
+
+void Editor::setStaffName(int staff, const QString& name)
+{
+    mutate(QStringLiteral("Nome da pauta"), [&] {
+        if (staff < 0 || staff >= int(m_score.staves.size())) return false;
+        m_score.staves[size_t(staff)].name = name;
+        return true;
+    });
+}
+
+void Editor::addStaff(int index, const QString& name, Clef clef)
+{
+    mutate(QStringLiteral("Adicionar pauta"), [&] {
+        Staff st;
+        st.name = name;
+        st.clef = clef;
+        st.measures.resize(size_t(std::max(1, m_score.measureCount())));
+        index = std::clamp(index, 0, int(m_score.staves.size()));
+        m_score.staves.insert(m_score.staves.begin() + index, std::move(st));
+        m_sel.active = false;
+        return true;
+    });
+}
+
+void Editor::removeStaff(int staff)
+{
+    mutate(QStringLiteral("Excluir pauta"), [&] {
+        if (m_score.staves.size() <= 1 || staff < 0 || staff >= int(m_score.staves.size())) {
+            emit message(QStringLiteral("A partitura precisa de pelo menos uma pauta."));
+            return false;
+        }
+        m_score.staves.erase(m_score.staves.begin() + staff);
+        m_sel.active = false;
+        return true;
+    });
+}
+
+void Editor::setTitleComposer(const QString& title, const QString& composer)
+{
+    mutate(QStringLiteral("Título e compositor"), [&] {
+        if (title == m_score.title && composer == m_score.composer) return false;
+        m_score.title = title;
+        m_score.composer = composer;
         return true;
     });
 }

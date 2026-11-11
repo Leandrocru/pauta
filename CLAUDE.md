@@ -16,7 +16,8 @@ Interface e mensagens em **português do Brasil**. Comentários no código em in
 - `render/Engraver` — função pura `Score → Layout` (espaçamento, sistemas, páginas, primitivas por página).
 - `render/Renderer` — pinta um `PageLayout` (glifos em um único `QGlyphRun`), exporta PDF/PNG.
 - `edit/Editor` — cursor, entrada estilo Speedy Entry, desfazer por snapshot (`QUndoStack`).
-- `ui/` — `MainWindow`, `ScoreView` (só pinta páginas visíveis), `NewScoreDialog`.
+- `ui/` — `MainWindow` (menus, paletas, barra de navegação), `ScoreView` (só pinta páginas visíveis; mouse e teclado conforme a ferramenta), `Tools.h` (lista de ferramentas), `Icons` (ícones próprios desenhados em tempo de execução), `LaunchDialog`, `NewScoreDialog`.
+- Interface: organização inspirada no Finale, mas ícones e arte são próprios (nunca copiar os do Finale).
 - `io/NativeFormat` — leitura/gravação do `.pauta` (XML).
 
 ## Compilar
@@ -32,5 +33,7 @@ QT_QPA_PLATFORM=offscreen ./build/Pauta --export-png demo.png            # parti
 QT_QPA_PLATFORM=offscreen ./build/Pauta --bench 1000                     # tempo de gravação
 QT_QPA_PLATFORM=offscreen ./build/Pauta --empty --test-keys "C D E F 4 G + Return" \
     --grab janela.png --save-to teste.pauta                               # simula teclado e captura a janela
+# --tool N escolhe a ferramenta (índice em ui/Tools.h; 0 Seleção, 8 Entrada simples, 9 Entrada rápida),
+# --scroll-view liga a visualização contínua, --select-all seleciona tudo.
 ```
 Olhe as imagens geradas para conferir a gravação. No Windows, ponha `C:\Qt\6.11.3\msvc2022_64\bin` no PATH.

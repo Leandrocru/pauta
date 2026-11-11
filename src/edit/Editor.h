@@ -18,6 +18,17 @@ struct Cursor {
     bool operator==(const Cursor&) const = default;
 };
 
+// Rectangular region of measures across a range of staves (inclusive).
+struct Selection {
+    bool active = false;
+    int staff0 = 0, staff1 = 0;
+    int measure0 = 0, measure1 = 0;
+    bool contains(int staff, int measure) const
+    {
+        return active && staff >= staff0 && staff <= staff1 && measure >= measure0 && measure <= measure1;
+    }
+};
+
 class Editor : public QObject {
     Q_OBJECT
 public:
@@ -56,12 +67,31 @@ public:
     // Structure
     void addMeasures(int n);
     void deleteMeasure();
+    void deleteSelectedMeasures();
+    void insertMeasuresBefore(int n);
+
+    // Region selection (Selection / Measure tools)
+    const Selection& selection() const { return m_sel; }
+    void setSelection(const Selection& s);
+    void selectAll();
+    void clearSelection();
+    void clearSelectionContents(); // Backspace/Delete on a selected region
+
+    // Document-level changes (all undoable)
+    void setKeySignature(int fifths);
+    void setTimeSignature(TimeSig t);
+    void setClef(int staff, Clef clef);
+    void setStaffName(int staff, const QString& name);
+    void addStaff(int index, const QString& name, Clef clef);
+    void removeStaff(int staff);
+    void setTitleComposer(const QString& title, const QString& composer);
 
     const Event* currentEvent() const;
 
 signals:
     void scoreChanged();
     void cursorChanged();
+    void selectionChanged();
     void message(const QString& text);
 
 private:
@@ -79,6 +109,7 @@ private:
     Cursor m_cursor;
     QUndoStack m_undo;
     int m_durLog = 2;
+    Selection m_sel;
 };
 
 } // namespace pauta

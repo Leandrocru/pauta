@@ -496,6 +496,26 @@ Layout Builder::run()
     m_spacing.reserve(size_t(nMeasures));
     for (int m = 0; m < nMeasures; ++m) m_spacing.push_back(computeSpacing(m_score, m, m_sp, m_headW));
 
+    // Scroll view: one endless system on a single strip, no title, natural spacing.
+    if (m_opt.continuous) {
+        const qreal margin = 6 * m_sp;
+        qreal indent = 0;
+        for (const Staff& st : m_score.staves)
+            if (!st.name.isEmpty()) indent = std::max(indent, textAdvance(st.name, 10) + 1.6 * m_sp);
+        System sys;
+        sys.first = 0;
+        sys.last = nMeasures - 1;
+        sys.showTime = true;
+        sys.headerW = headerWidth(true);
+        qreal width = sys.headerW;
+        for (const MeasureSpacing& ms : m_spacing) width += ms.width(1.0);
+        m_layout.pageWidth = 2 * margin + indent + width;
+        m_layout.pageHeight = 2 * margin + 8 * m_sp + systemHeight();
+        m_opt.pageHeight = m_layout.pageHeight;
+        drawSystem(sys, 0, margin + indent, margin + 4 * m_sp, true);
+        return std::move(m_layout);
+    }
+
     // Title block.
     const qreal margin = m_opt.margin;
     qreal contentTop = margin;
