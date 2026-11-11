@@ -22,6 +22,7 @@ XML UTF-8, legível e editável à mão.
 </pauta>
 ```
 
+- `tie="1"` em `<note>`: ligadura de valor com a mesma nota no próximo evento da pauta.
 - `alter` em `<note>`: -2..2 (bemol duplo … sustenido duplo). A nota escrita é
   sempre explícita; a armadura só decide quais acidentes aparecem.
 - Todas as pautas têm o mesmo número de compassos.

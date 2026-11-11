@@ -4,6 +4,7 @@
 #include "model/Score.h"
 
 #include <QLineF>
+#include <QPainterPath>
 #include <QList>
 #include <QPointF>
 #include <QRectF>
@@ -31,6 +32,7 @@ struct PageLayout {
     QList<quint32> glyphs;
     QList<QPointF> glyphPos;
     std::vector<LineItem> lines;
+    std::vector<QPainterPath> fills; // filled shapes: beams, ties
     std::vector<TextItem> texts;
 };
 

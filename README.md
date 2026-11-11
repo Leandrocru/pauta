@@ -21,7 +21,19 @@ o maior número possível de formatos de partitura.
 - Ferramentas de Pauta, Clave, Armadura, Fórmula de compasso (com redistribuição das notas) e Compasso
 - Desfazer/refazer ilimitado
 - Formato próprio `.pauta` (XML aberto, veja `docs/FORMATO.md`)
-- Exportação em PDF vetorial
+- Exportação em PDF vetorial e impressão
+- Barras de ligação e ligaduras de valor
+
+## Instalar (sem terminal)
+
+Baixe a versão mais recente na página **Releases** do repositório:
+
+- **Windows:** `Pauta.exe` → dois cliques → Avançar. Não pede senha de administrador.
+  Se o Windows mostrar "O Windows protegeu o computador", clique em
+  **Mais informações → Executar assim mesmo** (o instalador ainda não é assinado digitalmente).
+- **Ubuntu / Debian:** `pauta_X.Y.Z_amd64.deb` → dois cliques (abre a Central de Aplicativos) → Instalar.
+- **Qualquer Linux:** `Pauta-x86_64.AppImage` → botão direito → Propriedades →
+  "Permitir executar como programa" → dois cliques.
 
 ## Compilar
 
@@ -30,6 +42,7 @@ Requisitos: Visual Studio 2022 Build Tools (C++), CMake, Ninja e Qt 6.11 (MSVC 6
 ```bat
 build.cmd          :: compila em build\Pauta.exe
 build.cmd dist     :: e monta uma pasta portátil em build\dist
+build.cmd installer :: e gera o instalador build\installer\Pauta.exe (precisa do Inno Setup 6)
 ```
 
 Linha de comando:

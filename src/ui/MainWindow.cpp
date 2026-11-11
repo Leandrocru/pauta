@@ -297,12 +297,15 @@ void MainWindow::buildSimplePalette()
     };
     tool(smufl::AugmentationDot, QStringLiteral("Ponto de aumento (.)"), [this] { m_editor->toggleDot(); });
     tool(smufl::AccFlat, QStringLiteral("Bemol (-)"), [this] { m_editor->alter(-1); });
-    tool(smufl::AccNatural, QStringLiteral("Bequadro (=)"), [this] { m_editor->naturalize(); });
+    tool(smufl::AccNatural, QStringLiteral("Bequadro (N)"), [this] { m_editor->naturalize(); });
     tool(smufl::AccSharp, QStringLiteral("Sustenido (+)"), [this] { m_editor->alter(1); });
 
-    QAction* tie = new QAction(icons::tool(Tool::SmartShape), soon(QStringLiteral("Ligadura de valor")), this);
-    tie->setEnabled(false);
-    place(tie);
+    {
+        QAction* tie = new QAction(icons::tool(Tool::SmartShape), QStringLiteral("Ligadura de valor (= ou L)"), this);
+        tie->setToolTip(QStringLiteral("Ligadura de valor com a próxima nota (= ou L)"));
+        connect(tie, &QAction::triggered, this, [this] { m_editor->toggleTie(); m_view->setFocus(); });
+        place(tie);
+    }
     QAction* tup = new QAction(icons::tool(Tool::Tuplet), soon(QStringLiteral("Quiáltera")), this);
     tup->setEnabled(false);
     place(tup);
@@ -767,7 +770,8 @@ void MainWindow::showShortcuts()
         "<tr><td><b>A – G</b></td><td>Insere a nota pelo nome (C=Dó … B=Si), na oitava mais próxima</td></tr>"
         "<tr><td><b>Enter</b></td><td>Insere nota / adiciona ou remove a nota do cursor no acorde</td></tr>"
         "<tr><td><b>R</b></td><td>Insere pausa / alterna nota ↔ pausa</td></tr>"
-        "<tr><td><b>+ / − / =</b></td><td>Sustenido / bemol / bequadro</td></tr>"
+        "<tr><td><b>+ / − / N</b></td><td>Sustenido / bemol / bequadro</td></tr>"
+        "<tr><td><b>= ou L</b></td><td>Ligadura de valor com a próxima nota</td></tr>"
         "<tr><td><b>.</b></td><td>Ponto de aumento</td></tr>"
         "<tr><td><b>Shift + ↑ / ↓</b></td><td>Transpõe a nota (Ctrl: oitava)</td></tr>"
         "<tr><td><b>Delete / Backspace</b></td><td>Apaga a nota atual / anterior</td></tr>"

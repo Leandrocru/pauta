@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
-project(Pauta VERSION 0.2.0 LANGUAGES CXX)
+# The icon resource (.rc) has no includes; skip cmcldeps, which breaks with some CMake/Ninja setups.
+set(CMAKE_NINJA_CMCLDEPS_RC OFF)
+project(Pauta VERSION 0.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -36,15 +38,41 @@ qt_add_executable(Pauta WIN32
     src/ui/LaunchDialog.cpp
 )
 
-qt_add_resources(Pauta "fonts"
+qt_add_resources(Pauta "resources"
     PREFIX "/"
-    FILES resources/fonts/Bravura.otf
+    FILES resources/fonts/Bravura.otf resources/pauta.png
 )
 
 target_include_directories(Pauta PRIVATE src)
 target_compile_definitions(Pauta PRIVATE PROJECT_VERSION_STRING="${PROJECT_VERSION}")
 target_link_libraries(Pauta PRIVATE Qt6::Widgets Qt6::Gui Qt6::PrintSupport)
 
+if(WIN32)
+    target_sources(Pauta PRIVATE resources/pauta.rc) # icon of Pauta.exe
+endif()
+
 if(MSVC)
     target_compile_options(Pauta PRIVATE /W4 /permissive- /utf-8)
+endif()
+
+# ---- Linux: installation layout, .deb (CPack) and the AppDir used for the AppImage ----------
+if(UNIX AND NOT APPLE)
+    include(GNUInstallDirs)
+    set_target_properties(Pauta PROPERTIES OUTPUT_NAME pauta)
+    install(TARGETS Pauta RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(FILES packaging/linux/pauta.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    install(FILES resources/pauta.png DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/256x256/apps)
+    install(FILES packaging/linux/pauta-mime.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/mime/packages RENAME pauta.xml)
+
+    set(CPACK_GENERATOR DEB)
+    set(CPACK_PACKAGE_NAME pauta)
+    set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Editor de partituras leve")
+    set(CPACK_DEBIAN_PACKAGE_DESCRIPTION "Editor de partituras leve, inspirado no fluxo de trabalho do Finale.")
+    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Projeto Pauta")
+    set(CPACK_DEBIAN_PACKAGE_SECTION sound)
+    set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+    set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+    set(CPACK_PACKAGING_INSTALL_PREFIX /usr)
+    include(CPack)
 endif()

@@ -52,7 +52,8 @@ public:
     void deleteEvent();              // Delete
     void backspace();                // Backspace
     void alter(int delta);           // + / -
-    void naturalize();               // =
+    void naturalize();               // N
+    void toggleTie();                // = or L (Finale-style: tie to the next note)
     void toggleDot();                // .
     void transpose(int steps);       // Shift+Up/Down on the current event
 

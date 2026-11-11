@@ -295,6 +295,23 @@ void Editor::alter(int delta)
     });
 }
 
+void Editor::toggleTie()
+{
+    mutate(QStringLiteral("Ligadura de valor"), [&] {
+        Event* e = targetEvent();
+        if (!e || e->isRest()) return false;
+        // The pitch under the cursor if it is in the chord, otherwise the whole chord.
+        bool hit = false;
+        for (Pitch& p : e->pitches)
+            if (p.diatonic() == m_cursor.diatonic) { p.tie = !p.tie; hit = true; }
+        if (!hit) {
+            const bool anyUntied = std::any_of(e->pitches.begin(), e->pitches.end(), [](const Pitch& p) { return !p.tie; });
+            for (Pitch& p : e->pitches) p.tie = anyUntied;
+        }
+        return true;
+    });
+}
+
 void Editor::naturalize()
 {
     mutate(QStringLiteral("Bequadro"), [&] {
@@ -331,7 +348,9 @@ void Editor::transpose(int steps)
         if (!e || e->isRest()) return false;
         for (Pitch& p : e->pitches) {
             const int d = std::clamp(p.diatonic() + steps, 7, 7 * 8 + 6);
+            const bool tied = p.tie;
             p = Pitch::fromDiatonic(d, keyAlterFor(((d % 7) + 7) % 7, m_score.keyFifths));
+            p.tie = tied;
         }
         e->sortPitches();
         m_cursor.diatonic = std::clamp(m_cursor.diatonic + steps, 7, 7 * 8 + 6);

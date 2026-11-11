@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Pauta
+GenericName=Editor de partituras
+Comment=Escreva, edite e imprima partituras
+Exec=pauta %f
+Icon=pauta
+Terminal=false
+Categories=AudioVideo;Audio;Music;
+MimeType=application/x-pauta;
+Keywords=partitura;música;notação;score;music;notation;

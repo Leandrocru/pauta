@@ -7,6 +7,10 @@
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QElapsedTimer>
+#include <QGlyphRun>
+#include <QIcon>
+#include <QImage>
+#include <QPainter>
 #include <QKeyEvent>
 #include <QKeySequence>
 
@@ -21,6 +25,36 @@
 using namespace pauta;
 
 namespace {
+
+// Application icon: white treble clef on a blue rounded square, over faint staff lines.
+QImage makeAppIcon(int size)
+{
+    QImage img(size, size, QImage::Format_ARGB32_Premultiplied);
+    img.fill(Qt::transparent);
+    QPainter p(&img);
+    p.setRenderHint(QPainter::Antialiasing);
+    const qreal r = size * 0.18;
+    p.setPen(Qt::NoPen);
+    p.setBrush(QColor(0x1e, 0x5f, 0xb4));
+    p.drawRoundedRect(QRectF(size * 0.03, size * 0.03, size * 0.94, size * 0.94), r, r);
+    p.setPen(QPen(QColor(255, 255, 255, 90), size * 0.018));
+    for (int i = 0; i < 5; ++i) {
+        const qreal y = size * (0.34 + i * 0.09);
+        p.drawLine(QPointF(size * 0.12, y), QPointF(size * 0.88, y));
+    }
+    const auto& font = smufl::Font::instance();
+    const qreal sp = size * 0.09;
+    const QRectF bb = font.bbox(smufl::GClef, sp);
+    QGlyphRun run;
+    run.setRawFont(font.rawFont(sp));
+    run.setGlyphIndexes({ font.glyphIndex(smufl::GClef) });
+    // The clef's curl wraps the second line (G line) of the faint staff.
+    run.setPositions({ QPointF(size * 0.5 - bb.center().x(), size * (0.34 + 3 * 0.09)) });
+    p.setPen(Qt::white);
+    p.drawGlyphRun(QPointF(0, 0), run);
+    p.end();
+    return img;
+}
 
 // Large synthetic score for performance measurements.
 Score makeBenchScore(int measures)
@@ -58,8 +92,12 @@ int main(int argc, char* argv[])
     QApplication::setApplicationVersion(QStringLiteral(PROJECT_VERSION_STRING));
     QApplication::setOrganizationName(QStringLiteral("Pauta"));
 
+    QApplication::setWindowIcon(QIcon(QStringLiteral(":/resources/pauta.png")));
+
+    // Qt's own dialogs in Portuguese: next to the executable (installed/portable) or from Qt.
     QTranslator qtTr;
-    if (qtTr.load(QLocale(), QStringLiteral("qtbase"), QStringLiteral("_"), QLibraryInfo::path(QLibraryInfo::TranslationsPath)))
+    if (qtTr.load(QLocale(), QStringLiteral("qtbase"), QStringLiteral("_"), QCoreApplication::applicationDirPath() + QStringLiteral("/translations"))
+        || qtTr.load(QLocale(), QStringLiteral("qtbase"), QStringLiteral("_"), QLibraryInfo::path(QLibraryInfo::TranslationsPath)))
         app.installTranslator(&qtTr);
 
     QCommandLineParser cli;
@@ -76,7 +114,8 @@ int main(int argc, char* argv[])
     QCommandLineOption toolOpt(QStringLiteral("tool"), QStringLiteral("(teste) Ferramenta ativa (índice)."), QStringLiteral("n"));
     QCommandLineOption scrollOpt(QStringLiteral("scroll-view"), QStringLiteral("(teste) Visualização contínua."));
     QCommandLineOption selectOpt(QStringLiteral("select-all"), QStringLiteral("(teste) Seleciona tudo."));
-    cli.addOptions({ pdfOpt, pngOpt, benchOpt, emptyOpt, keysOpt, grabOpt, savePauta, toolOpt, scrollOpt, selectOpt });
+    QCommandLineOption iconOpt(QStringLiteral("write-icon"), QStringLiteral("(desenvolvimento) Gera o ícone do programa."), QStringLiteral("pasta"));
+    cli.addOptions({ pdfOpt, pngOpt, benchOpt, emptyOpt, keysOpt, grabOpt, savePauta, toolOpt, scrollOpt, selectOpt, iconOpt });
     cli.addPositionalArgument(QStringLiteral("partitura"), QStringLiteral("Arquivo .pauta a abrir."));
     cli.process(app);
 
@@ -86,6 +125,14 @@ int main(int argc, char* argv[])
     }
 
     QTextStream out(stdout);
+    if (cli.isSet(iconOpt)) {
+        // Development helper: regenerates resources/pauta.png and pauta.ico.
+        const QString dir = cli.value(iconOpt);
+        const QImage img = makeAppIcon(256);
+        const bool ok = img.save(dir + QStringLiteral("/pauta.png")) && img.save(dir + QStringLiteral("/pauta.ico"));
+        out << (ok ? "ok\n" : "falhou\n");
+        return ok ? 0 : 1;
+    }
     if (cli.isSet(benchOpt)) {
         const int n = std::max(1, cli.value(benchOpt).toInt());
         const Score s = makeBenchScore(n);

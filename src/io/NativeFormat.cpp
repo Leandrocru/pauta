@@ -81,6 +81,7 @@ bool saveNative(const Score& score, const QString& path, QString* error)
                     w.writeAttribute("step", QString(QChar::fromLatin1("CDEFGAB"[p.step])));
                     w.writeAttribute("oct", QString::number(p.octave));
                     if (p.alter) w.writeAttribute("alter", QString::number(p.alter));
+                    if (p.tie) w.writeAttribute("tie", QStringLiteral("1"));
                 }
                 w.writeEndElement();
             }
@@ -152,6 +153,7 @@ bool loadNative(Score& out, const QString& path, QString* error)
                 p.step = idx < 0 ? 0 : idx;
                 p.octave = qBound(0, attrInt(a, "oct", 4), 9);
                 p.alter = qBound(-2, attrInt(a, "alter", 0), 2);
+                p.tie = attrInt(a, "tie", 0) != 0;
                 event->pitches.push_back(p);
             }
         } else if (tok == QXmlStreamReader::EndElement) {

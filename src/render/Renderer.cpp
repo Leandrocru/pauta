@@ -37,6 +37,14 @@ void paintPage(QPainter& p, const Layout& layout, int pageIdx)
     }
     flush();
 
+    // Filled shapes (beams, ties).
+    if (!pg.fills.empty()) {
+        p.setPen(Qt::NoPen);
+        p.setBrush(Qt::black);
+        for (const QPainterPath& path : pg.fills) p.drawPath(path);
+        p.setBrush(Qt::NoBrush);
+    }
+
     // All music glyphs of the page in one draw call.
     if (!pg.glyphs.isEmpty()) {
         QGlyphRun run;

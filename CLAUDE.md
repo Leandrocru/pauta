@@ -25,13 +25,15 @@ Interface e mensagens em **português do Brasil**. Comentários no código em in
   Qt em `C:\Qt\6.11.3\msvc2022_64`; se faltar, `tools/get-qt.sh` baixa e confere.
 - **Linux / sessão na nuvem**: `sudo apt-get install -y qt6-base-dev ninja-build cmake` e então
   `cmake -S . -B build -G Ninja && cmake --build build`.
-- CI: `.github/workflows/build.yml` compila Windows e Linux; o `.exe` portátil sai como artefato `Pauta-windows`.
+- CI: `.github/workflows/build.yml` compila Windows e Linux e gera o instalador `Pauta.exe` (Inno Setup, `packaging/windows/pauta.iss`), o `.deb` (CPack) e o AppImage (linuxdeploy). Uma tag `vX.Y.Z` publica tudo em Releases; suba a versão em `CMakeLists.txt` antes.
+- No Linux o executável se chama `pauta` (no Windows, `Pauta.exe`).
+- `build.cmd installer` gera o instalador localmente (precisa do Inno Setup 6).
 
 ## Verificar sem interface gráfica
 ```
-QT_QPA_PLATFORM=offscreen ./build/Pauta --export-png demo.png            # partitura de demonstração
-QT_QPA_PLATFORM=offscreen ./build/Pauta --bench 1000                     # tempo de gravação
-QT_QPA_PLATFORM=offscreen ./build/Pauta --empty --test-keys "C D E F 4 G + Return" \
+QT_QPA_PLATFORM=offscreen ./build/pauta --export-png demo.png            # partitura de demonstração
+QT_QPA_PLATFORM=offscreen ./build/pauta --bench 1000                     # tempo de gravação
+QT_QPA_PLATFORM=offscreen ./build/pauta --empty --test-keys "C D E F 4 G + Return" \
     --grab janela.png --save-to teste.pauta                               # simula teclado e captura a janela
 # --tool N escolhe a ferramenta (índice em ui/Tools.h; 0 Seleção, 8 Entrada simples, 9 Entrada rápida),
 # --scroll-view liga a visualização contínua, --select-all seleciona tudo.

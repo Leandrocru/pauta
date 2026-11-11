@@ -8,8 +8,9 @@ Cada etapa termina com um programa utilizável.
 - [x] Fonte SMuFL (Bravura), desenho em lote, só páginas visíveis
 - [x] Speedy Entry (teclado), clique para posicionar o cursor, zoom
 - [x] Desfazer/refazer, formato `.pauta`, exportar PDF
-- [ ] Barras de ligação (colchetes de colcheias)
-- [ ] Ligaduras de valor (L) e quiálteras
+- [x] Barras de ligação (agrupadas por tempo, secundárias e parciais, inclinação limitada)
+- [x] Ligaduras de valor (= ou L), inclusive entre sistemas
+- [ ] Quiálteras
 
 ## Interface no estilo do Finale ✅ (v0.2)
 - [x] Paleta principal de ferramentas (ferramenta ativa decide o clique; as não prontas aparecem desativadas)

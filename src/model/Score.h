@@ -13,6 +13,7 @@ struct Pitch {
     int step = 0;   // 0=C, 1=D, 2=E, 3=F, 4=G, 5=A, 6=B
     int octave = 4; // scientific octave (C4 = middle C)
     int alter = 0;  // -2..+2 semitones
+    bool tie = false; // tied to the same pitch in the next event of the staff
 
     int diatonic() const { return octave * 7 + step; }
     static Pitch fromDiatonic(int d, int alter = 0) { return Pitch{ ((d % 7) + 7) % 7, (d - (((d % 7) + 7) % 7)) / 7, alter }; }

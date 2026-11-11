@@ -322,7 +322,9 @@ bool ScoreView::entryKeys(QKeyEvent* e)
     case Qt::Key_Backspace: ed.backspace(); return true;
     case Qt::Key_Plus: ed.alter(1); return true;
     case Qt::Key_Minus: ed.alter(-1); return true;
-    case Qt::Key_Equal: ed.naturalize(); return true;
+    case Qt::Key_Equal: ed.toggleTie(); return true;
+    case Qt::Key_L: if (!ctrl) { ed.toggleTie(); return true; } break;
+    case Qt::Key_N: if (!ctrl) { ed.naturalize(); return true; } break;
     case Qt::Key_Period: ed.toggleDot(); return true;
     case Qt::Key_R: if (!ctrl) { ed.enterRest(); return true; } break;
     default: break;
