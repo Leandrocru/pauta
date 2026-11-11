@@ -9,21 +9,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Qt6 REQUIRED COMPONENTS Widgets Gui PrintSupport Xml)
 qt_standard_project_setup()
 
-# Qt's private zip reader (QZipReader, exported by QtCore) opens compressed MusicXML (.mxl).
-# Its header lives in a versioned folder that differs between Qt builds, so look for it.
-set(PAUTA_ZIP_INCLUDE "")
-get_target_property(_qtcore_incs Qt6::Core INTERFACE_INCLUDE_DIRECTORIES)
-foreach(_d IN LISTS _qtcore_incs)
-    if(NOT PAUTA_ZIP_INCLUDE AND NOT _d MATCHES "\\$<" AND IS_DIRECTORY "${_d}")
-        file(GLOB_RECURSE _zip LIST_DIRECTORIES false "${_d}/qzipreader_p.h")
-        if(_zip)
-            list(GET _zip 0 _zip)
-            get_filename_component(_zip "${_zip}" DIRECTORY) # .../private
-            get_filename_component(_zip "${_zip}" DIRECTORY) # .../QtCore (versioned)
-            set(PAUTA_ZIP_INCLUDE "${_zip}")
-        endif()
-    endif()
-endforeach()
+# Qt's private zip reader (QZipReader) opens compressed MusicXML (.mxl). It lives in QtCore
+# since Qt 6.5 and in QtGui before that, so use whichever private module targets exist
+# (Qt >= 6.9 needs them requested explicitly; older Qt defines them with Core/Gui).
+find_package(Qt6 QUIET COMPONENTS CorePrivate GuiPrivate)
 
 qt_add_executable(Pauta WIN32
     src/main.cpp
@@ -64,9 +53,8 @@ qt_add_resources(Pauta "resources"
 target_include_directories(Pauta PRIVATE src)
 target_compile_definitions(Pauta PRIVATE PROJECT_VERSION_STRING="${PROJECT_VERSION}")
 target_link_libraries(Pauta PRIVATE Qt6::Widgets Qt6::Gui Qt6::PrintSupport Qt6::Xml)
-if(PAUTA_ZIP_INCLUDE)
-    target_include_directories(Pauta SYSTEM PRIVATE "${PAUTA_ZIP_INCLUDE}")
-    message(STATUS "QZipReader: ${PAUTA_ZIP_INCLUDE}")
+if(TARGET Qt6::CorePrivate AND TARGET Qt6::GuiPrivate)
+    target_link_libraries(Pauta PRIVATE Qt6::CorePrivate Qt6::GuiPrivate)
 else()
     target_compile_definitions(Pauta PRIVATE PAUTA_NO_MXL)
     message(WARNING "Cabecalhos privados do Qt nao encontrados: arquivos .mxl compactados nao serao suportados")
