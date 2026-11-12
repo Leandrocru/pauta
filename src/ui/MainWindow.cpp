@@ -1,6 +1,7 @@
 #include "ui/MainWindow.h"
 
 #include "edit/Editor.h"
+#include "playback/Player.h"
 #include "io/MusicXml.h"
 #include "io/NativeFormat.h"
 #include "render/Engraver.h"
@@ -56,6 +57,7 @@ QAction* disabledAction(QMenu* m, const QString& text)
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 {
     m_editor = new Editor(this);
+    m_player = new playback::Player(this);
     m_view = new ScoreView(m_editor);
     m_scroll = new QScrollArea;
     m_scroll->setWidget(m_view);
@@ -93,6 +95,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         statusBar()->showMessage(t, 4000);
         QApplication::beep();
     });
+    connect(m_editor, &Editor::hint, this, [this](const QString& t) { statusBar()->showMessage(t, 5000); });
     connect(m_editor->undoStack(), &QUndoStack::cleanChanged, this, &MainWindow::updateTitle);
 
     m_perf->setText(QStringLiteral("Gravação: %1 ms").arg(m_view->lastLayoutMs(), 0, 'f', 1));
@@ -197,7 +200,23 @@ void MainWindow::buildMenus()
     doc->addAction(QStringLiteral("Adicionar &compassos…"), this, &MainWindow::addMeasuresDialog);
 
     QMenu* midi = menuBar()->addMenu(QStringLiteral("&MIDI/Áudio"));
-    disabledAction(midi, QStringLiteral("Reproduzir"));
+    m_playAction = midi->addAction(icons::transport(icons::Transport::Play), QStringLiteral("&Reproduzir / parar"));
+    m_playAction->setShortcut(QKeySequence(Qt::Key_Space));
+    connect(m_playAction, &QAction::triggered, this, &MainWindow::togglePlay);
+    midi->addAction(icons::transport(icons::Transport::Rewind), QStringLiteral("&Voltar ao início"), QKeySequence(QStringLiteral("Ctrl+Home")), this, &MainWindow::rewind);
+    midi->addAction(QStringLiteral("&Andamento…"), this, [this] {
+        bool ok = false;
+        const int v = QInputDialog::getInt(this, QStringLiteral("Andamento"), QStringLiteral("Semínimas por minuto (♩ =):"),
+                                           m_editor->score().tempo, 20, 400, 1, &ok);
+        if (ok) m_editor->setTempo(v);
+    });
+    midi->addSeparator();
+    midi->addAction(QStringLiteral("Saída de som…"), this, [this] {
+        QMessageBox::information(this, QStringLiteral("Saída de som"),
+                                 m_player->available()
+                                     ? QStringLiteral("O Pauta toca usando: <b>%1</b>.").arg(m_player->outputName())
+                                     : QStringLiteral("Nenhuma saída de som disponível: %1").arg(m_player->outputName()));
+    });
     disabledAction(midi, QStringLiteral("Configurar dispositivo MIDI…"));
     disabledAction(midi, QStringLiteral("Banco de sons (SoundFont)…"));
 
@@ -216,6 +235,36 @@ void MainWindow::buildMenus()
                                           "Fonte musical Bravura © Steinberg Media Technologies (SIL Open Font License).")
                                .arg(QApplication::applicationVersion()));
     });
+}
+
+void MainWindow::togglePlay()
+{
+    if (m_player->isPlaying()) {
+        m_player->stop();
+        return;
+    }
+    if (!m_player->available()) {
+        QMessageBox::warning(this, QStringLiteral("Reprodução"),
+                             QStringLiteral("Não há saída de som disponível.\n\n%1").arg(m_player->outputName()));
+        return;
+    }
+    // From the start of the selection, or from the measure under the cursor.
+    const int from = m_editor->selection().active ? m_editor->selection().measure0 : m_editor->cursor().measure;
+    m_player->play(m_editor->score(), from);
+    statusBar()->showMessage(QStringLiteral("Reproduzindo a partir do compasso %1 — Espaço para parar").arg(from + 1), 3000);
+}
+
+void MainWindow::rewind()
+{
+    const bool wasPlaying = m_player->isPlaying();
+    m_player->stop();
+    Cursor c = m_editor->cursor();
+    c.measure = 0;
+    c.index = 0;
+    m_editor->setCursor(c);
+    m_editor->clearSelection();
+    m_scroll->verticalScrollBar()->setValue(0);
+    if (wasPlaying) togglePlay();
 }
 
 void MainWindow::comingSoon(const QString& what)
@@ -307,9 +356,12 @@ void MainWindow::buildSimplePalette()
         connect(tie, &QAction::triggered, this, [this] { m_editor->toggleTie(); m_view->setFocus(); });
         place(tie);
     }
-    QAction* tup = new QAction(icons::tool(Tool::Tuplet), soon(QStringLiteral("Quiáltera")), this);
-    tup->setEnabled(false);
-    place(tup);
+    {
+        QAction* tup = new QAction(icons::tool(Tool::Tuplet), QStringLiteral("Tercina (Ctrl+3)"), this);
+        tup->setToolTip(QStringLiteral("Tercina: a próxima nota começa um grupo de 3 (Ctrl+3; Ctrl+5 quintina, Ctrl+6 sextina…)"));
+        connect(tup, &QAction::triggered, this, [this] { m_editor->armTuplet(3); m_view->setFocus(); });
+        place(tup);
+    }
 
     grid->setRowStretch(n / 2 + 1, 1);
     w->setMinimumWidth(140);
@@ -391,19 +443,38 @@ void MainWindow::buildNavigationBar()
     }
 
     nav->addSeparator();
-    const QString playTip = QStringLiteral("Reprodução: em breve");
-    for (auto [kind, name] : { std::pair{ icons::Transport::Rewind, QStringLiteral("Voltar ao início") },
-                               std::pair{ icons::Transport::Play, QStringLiteral("Reproduzir") },
-                               std::pair{ icons::Transport::Stop, QStringLiteral("Parar") },
-                               std::pair{ icons::Transport::Record, QStringLiteral("Gravar (teclado MIDI)") } }) {
-        QAction* a = nav->addAction(icons::transport(kind), name);
-        a->setToolTip(QStringLiteral("%1 — em breve").arg(name));
-        a->setEnabled(false);
-    }
-    auto* tempo = new QLabel(QStringLiteral("  ♩ = 96  "));
-    tempo->setToolTip(playTip);
-    tempo->setEnabled(false);
-    nav->addWidget(tempo);
+    QAction* rew = nav->addAction(icons::transport(icons::Transport::Rewind), QStringLiteral("Voltar ao início"));
+    rew->setToolTip(QStringLiteral("Voltar ao início (Ctrl+Home)"));
+    connect(rew, &QAction::triggered, this, &MainWindow::rewind);
+    nav->addAction(m_playAction);
+    m_playAction->setToolTip(QStringLiteral("Reproduzir a partir do compasso atual (Espaço)"));
+    QAction* stopA = nav->addAction(icons::transport(icons::Transport::Stop), QStringLiteral("Parar"));
+    stopA->setToolTip(QStringLiteral("Parar (Espaço)"));
+    connect(stopA, &QAction::triggered, this, [this] { m_player->stop(); });
+    QAction* rec = nav->addAction(icons::transport(icons::Transport::Record), QStringLiteral("Gravar (teclado MIDI)"));
+    rec->setToolTip(QStringLiteral("Gravar com teclado MIDI — em breve"));
+    rec->setEnabled(false);
+
+    nav->addWidget(new QLabel(QStringLiteral("  ♩ = ")));
+    m_tempoBox = new QSpinBox;
+    m_tempoBox->setRange(20, 400);
+    m_tempoBox->setValue(m_editor->score().tempo);
+    m_tempoBox->setFocusPolicy(Qt::ClickFocus);
+    m_tempoBox->setToolTip(QStringLiteral("Andamento (semínimas por minuto)"));
+    nav->addWidget(m_tempoBox);
+    connect(m_tempoBox, &QSpinBox::editingFinished, this, [this] {
+        m_editor->setTempo(m_tempoBox->value());
+        m_view->setFocus();
+    });
+    connect(m_editor, &Editor::scoreChanged, this, [this] {
+        if (!m_tempoBox->hasFocus()) m_tempoBox->setValue(m_editor->score().tempo);
+    });
+
+    connect(m_player, &playback::Player::measureChanged, this, [this](int m) { m_view->setPlaybackMeasure(m); });
+    connect(m_player, &playback::Player::stateChanged, this, [this](bool playing) {
+        m_playAction->setIcon(icons::transport(playing ? icons::Transport::Stop : icons::Transport::Play));
+        m_playAction->setText(playing ? QStringLiteral("Parar") : QStringLiteral("Reproduzir"));
+    });
     m_windowMenu->addAction(nav->toggleViewAction());
 }
 
@@ -821,7 +892,11 @@ void MainWindow::showShortcuts()
         "<tr><td><b>.</b></td><td>Ponto de aumento</td></tr>"
         "<tr><td><b>Shift + ↑ / ↓</b></td><td>Transpõe a nota (Ctrl: oitava)</td></tr>"
         "<tr><td><b>Delete / Backspace</b></td><td>Apaga a nota atual / anterior</td></tr>"
+        "<tr><td><b>Ctrl + 3</b></td><td>Tercina: a próxima nota começa um grupo de 3 e as seguintes o completam "
+        "(Ctrl+2 duína, Ctrl+5 quintina, Ctrl+6 sextina, Ctrl+7 setina)</td></tr>"
         "<tr><td><b>Alt + 1 – 4</b></td><td>Escolhe a camada (voz) 1 a 4. Com duas camadas, a 1 fica com hastes para cima e a 2 para baixo</td></tr>"
+        "<tr><td><b>Espaço</b></td><td>Reproduz a partir do compasso atual / para</td></tr>"
+        "<tr><td><b>Ctrl + Home</b></td><td>Volta ao início</td></tr>"
         "<tr><td><b>Ctrl + E</b></td><td>Alterna visualização de página / contínua</td></tr>"
         "<tr><td><b>Ctrl + roda do mouse</b></td><td>Zoom</td></tr>"
         "</table>"));

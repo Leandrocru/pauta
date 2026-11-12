@@ -18,6 +18,7 @@ Interface e mensagens em **português do Brasil**. Comentários no código em in
 - `edit/Editor` — cursor, entrada estilo Speedy Entry, desfazer por snapshot (`QUndoStack`).
 - `ui/` — `MainWindow` (menus, paletas, barra de navegação), `ScoreView` (só pinta páginas visíveis; mouse e teclado conforme a ferramenta), `Tools.h` (lista de ferramentas), `Icons` (ícones próprios desenhados em tempo de execução), `LaunchDialog`, `NewScoreDialog`.
 - Interface: organização inspirada no Finale, mas ícones e arte são próprios (nunca copiar os do Finale).
+- `playback/` — `Sequence` (Score → mensagens MIDI com tempo; ligaduras viram uma nota só), `Player` (timer de 4 ms), `MidiOut` (Windows: WinMM/GS Wavetable; Linux: `SoftSynth`, sintetizador de tabela de onda via ALSA). Teste sem som: `--playback-check [arquivo]`.
 - `io/NativeFormat` — leitura/gravação do `.pauta` (XML).
 - `io/MusicXml` — importação MusicXML (partwise; `.mxl` via `QZipReader` privado do Qt). Cada voz MusicXML de uma pauta vira uma camada (até 4; mapeamento fixo por parte) e avisa o que simplificou. Arquivo de teste: `tests/data/piano-teste.musicxml` (+ `.mxl`), usado também no CI.
 

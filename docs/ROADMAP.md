@@ -10,7 +10,7 @@ Cada etapa termina com um programa utilizável.
 - [x] Desfazer/refazer, formato `.pauta`, exportar PDF
 - [x] Barras de ligação (agrupadas por tempo, secundárias e parciais, inclinação limitada)
 - [x] Ligaduras de valor (= ou L), inclusive entre sistemas
-- [ ] Quiálteras
+- [x] Quiálteras (Ctrl+3, Ctrl+5…; número e colchete; importadas do MusicXML)
 
 ## Interface no estilo do Finale ✅ (v0.2)
 - [x] Paleta principal de ferramentas (ferramenta ativa decide o clique; as não prontas aparecem desativadas)
@@ -28,7 +28,8 @@ Cada etapa termina com um programa utilizável.
 - [x] MusicXML (`.musicxml` / `.mxl`) — importar (até 4 vozes por pauta viram camadas; avisa o que simplificou)
 - [ ] MusicXML — exportar
 - [ ] MIDI (`.mid`) — importar (com quantização) e exportar
-- [ ] Reprodução com SoundFont (carregamento sob demanda)
+- [x] Reprodução: sintetizador MIDI do Windows / sintetizador interno no Linux; Espaço toca/para; andamento
+- [ ] Reprodução com SoundFont próprio (timbres melhores e iguais em todos os sistemas)
 - [ ] Exportar SVG / PNG por página
 
 ## Etapa 3 — Gravação completa

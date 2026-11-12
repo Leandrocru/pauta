@@ -15,6 +15,7 @@ namespace pauta {
 
 class Editor;
 class ScoreView;
+namespace playback { class Player; }
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -56,6 +57,8 @@ private:
     void addStaffDialog();
     void addMeasuresDialog();
     void comingSoon(const QString& what);
+    void togglePlay();
+    void rewind();
 
     Editor* m_editor;
     ScoreView* m_view;
@@ -73,6 +76,9 @@ private:
     QSpinBox* m_measureBox = nullptr;
     QComboBox* m_zoomBox = nullptr;
     QActionGroup* m_layerGroup = nullptr;
+    playback::Player* m_player = nullptr;
+    QAction* m_playAction = nullptr;
+    QSpinBox* m_tempoBox = nullptr;
     Tool m_tool = Tool::SpeedyEntry;
     QString m_path;
     bool m_updatingNav = false;

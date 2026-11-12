@@ -141,6 +141,30 @@ void Editor::advanceIfFull()
 
 bool Editor::insertEvent(Event e)
 {
+    // Tuplet entry: the first note after Ctrl+N opens the group, later notes fill it.
+    const int savedArm = m_tupArm, savedActual = m_tupActual, savedNormal = m_tupNormal;
+    const Frac savedRemaining = m_tupRemaining;
+    const Frac base = e.baseDuration();
+    if (m_tupArm > 0) {
+        m_tupActual = m_tupArm;
+        m_tupNormal = tupletNormalFor(m_tupArm);
+        m_tupArm = 0;
+        e.tupletStart = true;
+        m_tupRemaining = base * Frac(m_tupActual);
+    }
+    if (m_tupActual > 0 && m_tupRemaining > Frac(0)) {
+        e.tupletActual = m_tupActual;
+        e.tupletNormal = m_tupNormal;
+        m_tupRemaining -= base;
+        if (m_tupRemaining <= Frac(0)) m_tupActual = 0;
+    }
+    auto restore = [&] {
+        m_tupArm = savedArm;
+        m_tupActual = savedActual;
+        m_tupNormal = savedNormal;
+        m_tupRemaining = savedRemaining;
+    };
+
     const Frac cap = m_score.time.capacity();
     if (measure().filled(m_cursor.voice) + e.duration() > cap) {
         // A full measure with the cursor at its end: continue in the next one.
@@ -148,9 +172,10 @@ bool Editor::insertEvent(Event e)
             if (m_cursor.measure == m_score.measureCount() - 1) m_score.appendMeasure();
             ++m_cursor.measure;
             m_cursor.index = 0;
-            if (measure().filled(m_cursor.voice) + e.duration() > cap) { emit message(tooLong()); return false; }
+            if (measure().filled(m_cursor.voice) + e.duration() > cap) { emit message(tooLong()); restore(); return false; }
         } else {
             emit message(tooLong());
+            restore();
             return false;
         }
     }
@@ -167,7 +192,9 @@ void Editor::enterDuration(int durLog)
     if (currentEvent()) {
         mutate(QStringLiteral("Alterar duração"), [&] {
             Event* e = currentEventMut();
-            const Frac newDur = durationOf(durLog, e->dots);
+            Event changed = *e;
+            changed.durLog = durLog;
+            const Frac newDur = changed.duration();
             if (measure().filled(m_cursor.voice) - e->duration() + newDur > m_score.time.capacity()) {
                 emit message(tooLong());
                 return false;
@@ -335,7 +362,9 @@ void Editor::toggleDot()
         for (Measure& m : m_score.staves[size_t(m_cursor.staff)].measures) {
             const auto& ev = m.voice(m_cursor.voice);
             if (ev.empty() || e < &ev.front() || e > &ev.back()) continue;
-            if (m.filled(m_cursor.voice) - e->duration() + durationOf(e->durLog, newDots) > m_score.time.capacity()) {
+            Event changed = *e;
+            changed.dots = newDots;
+            if (m.filled(m_cursor.voice) - e->duration() + changed.duration() > m_score.time.capacity()) {
                 emit message(tooLong());
                 return false;
             }
@@ -399,6 +428,24 @@ void Editor::moveStaff(int d)
     m_cursor.diatonic += clefMiddleLine(newClef) - clefMiddleLine(oldClef);
     clampCursor();
     emit cursorChanged();
+}
+
+void Editor::armTuplet(int actual)
+{
+    m_tupArm = std::clamp(actual, 2, 15);
+    m_tupActual = 0;
+    emit hint(QStringLiteral("Quiáltera de %1: digite a primeira nota (as próximas completam o grupo).").arg(m_tupArm));
+    emit cursorChanged();
+}
+
+void Editor::setTempo(int qpm)
+{
+    mutate(QStringLiteral("Andamento"), [&] {
+        qpm = std::clamp(qpm, 20, 400);
+        if (qpm == m_score.tempo) return false;
+        m_score.tempo = qpm;
+        return true;
+    });
 }
 
 void Editor::setVoice(int v)

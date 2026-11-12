@@ -178,7 +178,7 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
         partNames[sp.attribute(QStringLiteral("id"))] = childText(sp, QStringLiteral("part-name"));
 
     bool timeSet = false, keySet = false;
-    bool timeChanged = false, keyChanged = false, clefChanged = false, tuplets = false;
+    bool timeChanged = false, keyChanged = false, clefChanged = false, tempoSet = false;
     int droppedNotes = 0, graceNotes = 0;
 
     for (QDomElement part = root.firstChildElement(QStringLiteral("part")); !part.isNull();
@@ -227,6 +227,13 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
                         const Clef cl = clefFrom(childText(c, QStringLiteral("sign")), childText(c, QStringLiteral("line")).toInt());
                         if (firstMeasure) staves[size_t(n)].clef = cl;
                         else if (cl != staves[size_t(n)].clef) clefChanged = true;
+                    }
+                } else if (tag == u"direction" || tag == u"sound") {
+                    // First tempo mark (<sound tempo="...">) becomes the playback tempo.
+                    const QDomElement snd = tag == u"sound" ? el : el.firstChildElement(QStringLiteral("sound"));
+                    if (!tempoSet && !snd.isNull() && snd.hasAttribute(QStringLiteral("tempo"))) {
+                        s.tempo = std::clamp(int(std::lround(snd.attribute(QStringLiteral("tempo")).toDouble())), 20, 400);
+                        tempoSet = true;
                     }
                 } else if (tag == u"backup") {
                     pos -= toFrac(childText(el, QStringLiteral("duration")).toInt());
@@ -288,7 +295,16 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
                     const int tl = typeToLog(childText(el, QStringLiteral("type")));
                     int dots = 0;
                     for (QDomElement d = el.firstChildElement(QStringLiteral("dot")); !d.isNull(); d = d.nextSiblingElement(QStringLiteral("dot"))) ++dots;
-                    if (!el.firstChildElement(QStringLiteral("time-modification")).isNull()) tuplets = true;
+                    const QDomElement tm = el.firstChildElement(QStringLiteral("time-modification"));
+                    if (!tm.isNull()) {
+                        ev.tupletActual = std::clamp(childText(tm, QStringLiteral("actual-notes")).toInt(), 0, 32);
+                        ev.tupletNormal = std::clamp(childText(tm, QStringLiteral("normal-notes")).toInt(), 0, 32);
+                        bool opens = layer.empty() || layer.back().tupletActual != ev.tupletActual;
+                        for (QDomElement t = el.firstChildElement(QStringLiteral("notations")).firstChildElement(QStringLiteral("tuplet"));
+                             !t.isNull(); t = t.nextSiblingElement(QStringLiteral("tuplet")))
+                            if (t.attribute(QStringLiteral("type")) == u"start") opens = true;
+                        ev.tupletStart = opens;
+                    }
                     if (tl != -99) {
                         ev.durLog = tl;
                         ev.dots = std::min(dots, 3);
@@ -337,7 +353,6 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
     if (warnings) {
         if (droppedNotes) warnings->append(QStringLiteral("%1 nota(s) de vozes secundárias foram omitidas (o Pauta tem até quatro camadas por pauta).").arg(droppedNotes));
         if (graceNotes) warnings->append(QStringLiteral("%1 apojatura(s) foram omitidas.").arg(graceNotes));
-        if (tuplets) warnings->append(QStringLiteral("Há quiálteras: as notas foram mantidas, mas ainda sem o número/colchete de quiáltera."));
         if (keyChanged) warnings->append(QStringLiteral("Mudanças de armadura no meio da peça foram ignoradas."));
         if (timeChanged) warnings->append(QStringLiteral("Mudanças de fórmula de compasso no meio da peça foram ignoradas."));
         if (clefChanged) warnings->append(QStringLiteral("Mudanças de clave no meio da peça foram ignoradas."));

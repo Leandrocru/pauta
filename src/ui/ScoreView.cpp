@@ -91,6 +91,27 @@ void ScoreView::zoomAt(const QPointF& widgetPos, qreal factor)
     emit ensureVisibleRequested(QRect(w.toPoint() - QPoint(1, 1), QSize(2, 2)));
 }
 
+void ScoreView::setPlaybackMeasure(int measure)
+{
+    m_playMeasure = measure;
+    if (measure >= 0) {
+        // Keep the sounding measure (all its staves) on screen.
+        QRectF r;
+        int page = -1;
+        for (const MeasureSlot& s : m_layout.measureSlots) {
+            if (s.measure != measure) continue;
+            const QRectF sr(s.x0, s.staffTop - 2 * m_layout.sp, s.x1 - s.x0, 8 * m_layout.sp);
+            r = r.isNull() ? sr : r.united(sr);
+            page = s.page;
+        }
+        if (page >= 0) {
+            const QRectF pr = pageRect(page);
+            emit ensureVisibleRequested(QRectF(pr.topLeft() + r.topLeft() * m_zoom, r.size() * m_zoom).toAlignedRect());
+        }
+    }
+    update();
+}
+
 void ScoreView::setTool(Tool t)
 {
     m_tool = t;
@@ -170,6 +191,11 @@ void ScoreView::paintEvent(QPaintEvent* e)
         p.save();
         p.translate(r.topLeft());
         p.scale(m_zoom, m_zoom);
+        if (m_playMeasure >= 0) {
+            for (const MeasureSlot& s : m_layout.measureSlots)
+                if (s.page == i && s.measure == m_playMeasure)
+                    p.fillRect(QRectF(s.x0, s.staffTop - 1.5 * m_layout.sp, s.x1 - s.x0, 7 * m_layout.sp), QColor(40, 170, 80, 45));
+        }
         paintSelection(p, i);
         paintPage(p, m_layout, i);
         if (m_tool == Tool::SpeedyEntry) paintSpeedy(p, i);
@@ -337,6 +363,10 @@ bool ScoreView::entryKeys(QKeyEvent* e)
     case Qt::Key_Period: ed.toggleDot(); return true;
     case Qt::Key_R: if (!ctrl) { ed.enterRest(); return true; } break;
     default: break;
+    }
+    if (ctrl && !alt && e->key() >= Qt::Key_2 && e->key() <= Qt::Key_9) {
+        ed.armTuplet(e->key() - Qt::Key_0);
+        return true;
     }
     if (!ctrl && !alt) {
         const int k = e->key();

@@ -1,4 +1,6 @@
 #include "io/MusicXml.h"
+#include "playback/MidiOut.h"
+#include "playback/Sequence.h"
 #include "io/NativeFormat.h"
 #include "render/Engraver.h"
 #include "render/Renderer.h"
@@ -115,8 +117,9 @@ int main(int argc, char* argv[])
     QCommandLineOption toolOpt(QStringLiteral("tool"), QStringLiteral("(teste) Ferramenta ativa (índice)."), QStringLiteral("n"));
     QCommandLineOption scrollOpt(QStringLiteral("scroll-view"), QStringLiteral("(teste) Visualização contínua."));
     QCommandLineOption selectOpt(QStringLiteral("select-all"), QStringLiteral("(teste) Seleciona tudo."));
+    QCommandLineOption playCheckOpt(QStringLiteral("playback-check"), QStringLiteral("(teste) Monta a sequência de reprodução e abre a saída de som, sem tocar."));
     QCommandLineOption iconOpt(QStringLiteral("write-icon"), QStringLiteral("(desenvolvimento) Gera o ícone do programa."), QStringLiteral("pasta"));
-    cli.addOptions({ pdfOpt, pngOpt, benchOpt, emptyOpt, keysOpt, grabOpt, savePauta, toolOpt, scrollOpt, selectOpt, iconOpt });
+    cli.addOptions({ pdfOpt, pngOpt, benchOpt, emptyOpt, keysOpt, grabOpt, savePauta, toolOpt, scrollOpt, selectOpt, iconOpt, playCheckOpt });
     cli.addPositionalArgument(QStringLiteral("partitura"), QStringLiteral("Arquivo .pauta ou MusicXML a abrir."));
     cli.process(app);
 
@@ -133,6 +136,20 @@ int main(int argc, char* argv[])
         const bool ok = img.save(dir + QStringLiteral("/pauta.png")) && img.save(dir + QStringLiteral("/pauta.ico"));
         out << (ok ? "ok\n" : "falhou\n");
         return ok ? 0 : 1;
+    }
+    if (cli.isSet(playCheckOpt)) {
+        Score s = Score::makeDemo();
+        QString err;
+        if (!cli.positionalArguments().isEmpty() && !io::loadAnyScore(s, cli.positionalArguments().first(), &err)) {
+            out << "falhou: " << err << Qt::endl;
+            return 1;
+        }
+        const playback::Sequence seq = playback::buildSequence(s, 0);
+        auto midi = playback::createMidiOut();
+        out << "notas=" << seq.noteCount << " mensagens=" << seq.messages.size()
+            << " duracao=" << QString::number(seq.length, 'f', 2) << "s compassos=" << seq.measureStart.size()
+            << " saida=\"" << midi->name() << "\" ok=" << (midi->ok() ? "sim" : "nao") << Qt::endl;
+        return 0;
     }
     if (cli.isSet(benchOpt)) {
         const int n = std::max(1, cli.value(benchOpt).toInt());

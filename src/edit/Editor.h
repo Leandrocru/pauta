@@ -44,6 +44,9 @@ public:
     void setCursor(const Cursor& c);
     void setDurLog(int durLog) { m_durLog = durLog; emit cursorChanged(); }
     void setVoice(int v);                  // active layer 0..3 (Finale: layers 1-4)
+    void armTuplet(int actual);            // Ctrl+3 etc.: the next notes form a tuplet
+    int armedTuplet() const { return m_tupArm ? m_tupArm : m_tupActual; }
+    void setTempo(int qpm);
     void restore(const Score& s, const Cursor& c); // used by undo/redo
 
     // Note entry
@@ -95,7 +98,8 @@ signals:
     void scoreChanged();
     void cursorChanged();
     void selectionChanged();
-    void message(const QString& text);
+    void message(const QString& text); // problem (the UI beeps)
+    void hint(const QString& text);    // information only
 
 private:
     bool mutate(const QString& text, const std::function<bool()>& fn);
@@ -115,6 +119,10 @@ private:
     QUndoStack m_undo;
     int m_durLog = 2;
     Selection m_sel;
+    // Tuplet being entered: armed (next note starts it) or active (filling it).
+    int m_tupArm = 0;
+    int m_tupActual = 0, m_tupNormal = 0;
+    Frac m_tupRemaining; // written (base) time still to fill
 };
 
 } // namespace pauta

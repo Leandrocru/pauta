@@ -16,7 +16,22 @@ Frac durationOf(int durLog, int dots)
     return total;
 }
 
-Frac Event::duration() const { return durationOf(durLog, dots); }
+Frac Event::baseDuration() const { return durationOf(durLog, dots); }
+
+Frac Event::duration() const
+{
+    const Frac base = durationOf(durLog, dots);
+    return inTuplet() ? base * Frac(tupletNormal, tupletActual) : base;
+}
+
+int tupletNormalFor(int actual)
+{
+    if (actual == 2) return 3;   // duplet (compound meters)
+    if (actual == 4) return 3;   // quadruplet in compound meters
+    int n = 1;
+    while (n * 2 < actual) n *= 2;
+    return n;                    // 3->2, 5..7->4, 9..15->8
+}
 
 void Event::sortPitches()
 {

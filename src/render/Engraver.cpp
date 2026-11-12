@@ -344,6 +344,8 @@ private:
     void drawBeamGroup(PageLayout& pg, const std::vector<Event>& evs, const StaffMeasureInfo& smi, const std::vector<int>& group,
                        const std::vector<qreal>& xs, qreal staffTop);
     void drawTie(int page, qreal x0, qreal x1, qreal y, bool above);
+    void drawTuplets(PageLayout& pg, const std::vector<Event>& evs, const StaffMeasureInfo& vi,
+                     const std::vector<qreal>& xs, qreal staffTop);
     void handleTies(int page, int staff, int voice, const Event& e, const EventInfo& info, qreal x, qreal staffTop,
                     qreal systemStartX, qreal systemEndX);
 
@@ -605,6 +607,69 @@ void Builder::drawBeamGroup(PageLayout& pg, const std::vector<Event>& evs, const
     }
 }
 
+void Builder::drawTuplets(PageLayout& pg, const std::vector<Event>& evs, const StaffMeasureInfo& vi,
+                          const std::vector<qreal>& xs, qreal staffTop)
+{
+    const qreal sp = m_sp;
+    const qreal headW = m_font.advance(smufl::NoteheadBlack, sp);
+    size_t k = 0;
+    while (k < evs.size()) {
+        if (!evs[k].inTuplet()) { ++k; continue; }
+        // A group: from a tuplet start to the next start / ratio change / non-tuplet event.
+        const size_t k0 = k;
+        ++k;
+        while (k < evs.size() && evs[k].inTuplet() && !evs[k].tupletStart && evs[k].tupletActual == evs[k0].tupletActual) ++k;
+        const size_t k1 = k - 1;
+
+        // Side: where the stems are (above for up-stems), like the number of a beamed triplet.
+        bool above = true;
+        for (size_t i = k0; i <= k1; ++i)
+            if (!evs[i].isRest()) { above = vi.events[i].stemUp; break; }
+        const bool allBeamed = vi.events[k0].beamGroup >= 0 &&
+            std::all_of(vi.events.begin() + long(k0), vi.events.begin() + long(k1) + 1,
+                        [&](const EventInfo& e) { return e.beamGroup == vi.events[k0].beamGroup; });
+
+        // Clear all noteheads, stems and the staff itself.
+        qreal edge = above ? y(staffTop, 4) - 0.5 * sp : y(staffTop, -4) + 0.5 * sp;
+        for (size_t i = k0; i <= k1; ++i) {
+            const EventInfo& info = vi.events[i];
+            if (evs[i].isRest()) {
+                const qreal ry = y(staffTop, info.restPos);
+                edge = above ? std::min(edge, ry - 1.5 * sp) : std::max(edge, ry + 1.5 * sp);
+                continue;
+            }
+            const bool stem = evs[i].durLog >= 1;
+            const qreal stemLen = (kStemLen + 0.5 * std::max(0, evs[i].durLog - 3)) * sp;
+            if (above) edge = std::min(edge, y(staffTop, info.pos.back()) - (stem && info.stemUp ? stemLen : 0.8 * sp));
+            else edge = std::max(edge, y(staffTop, info.pos.front()) + (stem && !info.stemUp ? stemLen : 0.8 * sp));
+        }
+        const qreal by = edge + (above ? -0.9 : 0.9) * sp; // bracket line
+        const qreal x0 = xs[k0] - 0.3 * sp;
+        const qreal x1 = xs[k1] + headW + 0.3 * sp;
+        const qreal cx = (x0 + x1) / 2;
+
+        // Number (SMuFL tuplet digits), centred on the bracket line.
+        const QString num = QString::number(evs[k0].tupletActual);
+        qreal w = 0;
+        for (QChar c : num) w += m_font.advance(char16_t(0xE880 + (c.unicode() - '0')), sp);
+        qreal nx = cx - w / 2;
+        const qreal ny = by + 0.75 * sp;
+        for (QChar c : num) {
+            const char16_t cp = char16_t(0xE880 + (c.unicode() - '0'));
+            glyph(pg, cp, nx, ny);
+            nx += m_font.advance(cp, sp);
+        }
+        if (allBeamed) continue; // a beamed group shows just the number
+
+        const qreal hook = (above ? 0.8 : -0.8) * sp;
+        const qreal gap = w / 2 + 0.4 * sp;
+        line(pg, x0, by, cx - gap, by, kThinBarW * 0.8);
+        line(pg, cx + gap, by, x1, by, kThinBarW * 0.8);
+        line(pg, x0, by, x0, by + hook, kThinBarW * 0.8);
+        line(pg, x1, by, x1, by + hook, kThinBarW * 0.8);
+    }
+}
+
 void Builder::drawTie(int pageIdx, qreal x0, qreal x1, qreal yy, bool above)
 {
     if (x1 - x0 < 0.5 * m_sp) x1 = x0 + 0.5 * m_sp;
@@ -727,6 +792,7 @@ void Builder::drawSystem(const System& sys, int pageIdx, qreal left, qreal top, 
                     xs.push_back(ex);
                 }
                 for (const std::vector<int>& group : vi.beams) drawBeamGroup(pg, evs, vi, group, xs, st);
+                drawTuplets(pg, evs, vi, xs, st);
                 if (evs.empty()) m_pendingTies[size_t(s * kVoices + v)].clear();
                 const size_t ai = ms.indexOf(vi.filled);
                 slot.appendX[size_t(v)] = ai + 1 < ms.onsets.size() || vi.filled < m_score.time.capacity()

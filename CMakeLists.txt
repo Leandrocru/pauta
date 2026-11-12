@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 # The icon resource (.rc) has no includes; skip cmcldeps, which breaks with some CMake/Ninja setups.
 set(CMAKE_NINJA_CMCLDEPS_RC OFF)
-project(Pauta VERSION 0.5.0 LANGUAGES CXX)
+project(Pauta VERSION 0.6.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -30,6 +30,12 @@ qt_add_executable(Pauta WIN32
     src/render/Engraver.cpp
     src/render/Renderer.h
     src/render/Renderer.cpp
+    src/playback/Sequence.h
+    src/playback/Sequence.cpp
+    src/playback/MidiOut.h
+    src/playback/MidiOut.cpp
+    src/playback/Player.h
+    src/playback/Player.cpp
     src/edit/Editor.h
     src/edit/Editor.cpp
     src/ui/MainWindow.h
@@ -62,6 +68,16 @@ endif()
 
 if(WIN32)
     target_sources(Pauta PRIVATE resources/pauta.rc) # icon of Pauta.exe
+    target_link_libraries(Pauta PRIVATE winmm)       # built-in MIDI synthesizer for playback
+elseif(UNIX AND NOT APPLE)
+    find_package(ALSA)
+    if(ALSA_FOUND)
+        target_sources(Pauta PRIVATE src/playback/SoftSynth.h src/playback/SoftSynth.cpp)
+        target_link_libraries(Pauta PRIVATE ALSA::ALSA)
+        target_compile_definitions(Pauta PRIVATE PAUTA_HAVE_ALSA)
+    else()
+        message(WARNING "ALSA nao encontrado: reproducao de som desativada")
+    endif()
 endif()
 
 if(MSVC)

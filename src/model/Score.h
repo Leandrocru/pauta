@@ -26,9 +26,15 @@ struct Event {
     int durLog = 2;              // -1=breve, 0=whole, 1=half, 2=quarter, 3=eighth, 4=16th, 5=32nd, 6=64th
     int dots = 0;
     std::vector<Pitch> pitches;  // ascending by diatonic; empty = rest
+    // Tuplet: `tupletActual` notes in the time of `tupletNormal` (3:2 = triplet). 0 = none.
+    int tupletActual = 0;
+    int tupletNormal = 0;
+    bool tupletStart = false;    // first event of a tuplet group
 
     bool isRest() const { return pitches.empty(); }
-    Frac duration() const;
+    bool inTuplet() const { return tupletActual > 0 && tupletNormal > 0; }
+    Frac duration() const;       // real duration (tuplet ratio applied)
+    Frac baseDuration() const;   // written value (without the tuplet ratio)
     void sortPitches();
 };
 
@@ -62,6 +68,7 @@ struct Score {
     QString composer;
     TimeSig time;
     int keyFifths = 0; // -7..+7
+    int tempo = 96;    // quarter notes per minute (playback)
     std::vector<Staff> staves;
 
     int measureCount() const { return staves.empty() ? 0 : int(staves.front().measures.size()); }
@@ -80,6 +87,7 @@ int keyAlterFor(int step, int keyFifths);    // alteration implied by the key si
 QString pitchName(const Pitch& p);           // e.g. "Fá♯4"
 QString durationName(int durLog);            // e.g. "Semínima"
 QString clefName(Clef clef);
-QString keyName(int fifths);                 // e.g. "Sol maior / mi menor (1 ♯)"
+QString keyName(int fifths);
+int tupletNormalFor(int actual);             // 3 -> 2, 5 -> 4, 2 -> 3 (duplet), ...                 // e.g. "Sol maior / mi menor (1 ♯)"
 
 } // namespace pauta

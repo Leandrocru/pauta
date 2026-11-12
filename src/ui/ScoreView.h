@@ -25,6 +25,7 @@ public:
     bool continuous() const { return m_continuous; }
     void setContinuous(bool c);
     void setSimpleRestMode(bool rest) { m_simpleRest = rest; update(); }
+    void setPlaybackMeasure(int measure); // -1 = none
 
     QRectF pageRect(int page) const; // in widget pixels
     int pageAt(qreal y) const;       // page under a widget y coordinate
@@ -72,6 +73,7 @@ private:
     Tool m_tool = Tool::SpeedyEntry;
     bool m_continuous = false;
     bool m_simpleRest = false;
+    int m_playMeasure = -1;
 
     // Mouse interaction state
     bool m_selecting = false;

@@ -66,6 +66,8 @@ bool saveNative(const Score& score, const QString& path, QString* error)
     w.writeAttribute("beatType", QString::number(score.time.beatType));
     w.writeEmptyElement("key");
     w.writeAttribute("fifths", QString::number(score.keyFifths));
+    w.writeEmptyElement("tempo");
+    w.writeAttribute("qpm", QString::number(score.tempo));
     for (const Staff& st : score.staves) {
         w.writeStartElement("staff");
         w.writeAttribute("name", st.name);
@@ -77,6 +79,10 @@ bool saveNative(const Score& score, const QString& path, QString* error)
                     w.writeStartElement(e.isRest() ? "rest" : "chord");
                     w.writeAttribute("dur", QString::number(e.durLog));
                     if (e.dots) w.writeAttribute("dots", QString::number(e.dots));
+                    if (e.inTuplet()) {
+                        w.writeAttribute("tuplet", QStringLiteral("%1:%2").arg(e.tupletActual).arg(e.tupletNormal));
+                        if (e.tupletStart) w.writeAttribute("tupletStart", QStringLiteral("1"));
+                    }
                     for (const Pitch& p : e.pitches) {
                         w.writeEmptyElement("note");
                         w.writeAttribute("step", QString(QChar::fromLatin1("CDEFGAB"[p.step])));
@@ -142,6 +148,8 @@ bool loadNative(Score& out, const QString& path, QString* error)
             } else if (n == u"time") {
                 s.time.beats = qBound(1, attrInt(a, "beats", 4), 64);
                 s.time.beatType = qBound(1, attrInt(a, "beatType", 4), 64);
+            } else if (n == u"tempo") {
+                s.tempo = qBound(20, attrInt(a, "qpm", 96), 400);
             } else if (n == u"key") {
                 s.keyFifths = qBound(-7, attrInt(a, "fifths", 0), 7);
             } else if (n == u"staff") {
@@ -159,6 +167,12 @@ bool loadNative(Score& out, const QString& path, QString* error)
                 event = &measure->voice(voiceIdx).back();
                 event->durLog = qBound(-1, attrInt(a, "dur", 2), 6);
                 event->dots = qBound(0, attrInt(a, "dots", 0), 3);
+                const QStringList tup = attr(a, "tuplet").toString().split(QLatin1Char(':'));
+                if (tup.size() == 2) {
+                    event->tupletActual = qBound(0, tup[0].toInt(), 32);
+                    event->tupletNormal = qBound(0, tup[1].toInt(), 32);
+                    event->tupletStart = attrInt(a, "tupletStart", 0) != 0;
+                }
             } else if (n == u"note" && event) {
                 Pitch p;
                 const QString step = attr(a, "step").toString();
