@@ -11,6 +11,7 @@
 #include "ui/LaunchDialog.h"
 #include "ui/NewScoreDialog.h"
 #include "ui/ScoreView.h"
+#include "update/Updater.h"
 
 #include <QAction>
 #include <QActionGroup>
@@ -37,6 +38,7 @@
 #include <QSpinBox>
 #include <QStatusBar>
 #include <QToolBar>
+#include <QTimer>
 #include <QToolButton>
 
 namespace pauta {
@@ -229,6 +231,22 @@ void MainWindow::buildMenus()
 
     QMenu* help = menuBar()->addMenu(QStringLiteral("A&juda"));
     help->addAction(QStringLiteral("&Atalhos de entrada de notas"), QKeySequence::HelpContents, this, &MainWindow::showShortcuts);
+    help->addSeparator();
+    m_updater = new Updater(this);
+    m_updater->beforeQuit = [this] { return maybeSave(); };
+    connect(m_updater, &Updater::quitForUpdate, this, [this] {
+        m_closingForUpdate = true; // already asked to save
+        close();
+    });
+    help->addAction(QStringLiteral("&O que há de novo…"), this,
+                    [this] { Updater::showWhatsNew(this, QApplication::applicationVersion()); });
+    help->addAction(QStringLiteral("&Verificar atualizações…"), this, [this] { m_updater->checkNow(true); });
+    QAction* autoUpd = help->addAction(QStringLiteral("Verificar atualizações &automaticamente"));
+    autoUpd->setCheckable(true);
+    autoUpd->setChecked(Updater::autoCheckEnabled());
+    connect(autoUpd, &QAction::toggled, this, [](bool on) { Updater::setAutoCheckEnabled(on); });
+    connect(help, &QMenu::aboutToShow, autoUpd, [autoUpd] { autoUpd->setChecked(Updater::autoCheckEnabled()); });
+    help->addSeparator();
     help->addAction(QStringLiteral("&Sobre o Pauta"), this, [this] {
         QMessageBox::about(this, QStringLiteral("Sobre o Pauta"),
                            QStringLiteral("<b>Pauta</b> %1<br>Editor de partituras leve, inspirado no fluxo de trabalho do Finale.<br><br>"
@@ -902,9 +920,22 @@ void MainWindow::showShortcuts()
         "</table>"));
 }
 
+void MainWindow::startupChecks()
+{
+    // After an update, show what changed in this version (once).
+    QSettings st;
+    const QString current = QApplication::applicationVersion();
+    const QString last = st.value(QStringLiteral("update/lastRunVersion")).toString();
+    st.setValue(QStringLiteral("update/lastRunVersion"), current);
+    if (!last.isEmpty() && Updater::compareVersions(last, current) < 0) Updater::showWhatsNew(this, current);
+    // Then, a little after start-up, look for a newer version (at most once a day).
+    QTimer::singleShot(4000, m_updater, [this] { m_updater->checkAtStartup(); });
+}
+
 void MainWindow::closeEvent(QCloseEvent* e)
 {
-    if (!maybeSave()) {
+    m_player->stop();
+    if (!m_closingForUpdate && !maybeSave()) {
         e->ignore();
         return;
     }

@@ -147,21 +147,17 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: pkgs
+      - name: Notas da versão (do CHANGELOG.md)
+        run: bash tools/release-notes.sh "${GITHUB_REF_NAME}" > release-notes.md && cat release-notes.md
       - name: Publicar na página Releases
         uses: softprops/action-gh-release@v2
         with:
           name: Pauta ${{ github.ref_name }}
-          body: |
-            **Windows:** baixe `Pauta.exe` e dê dois cliques para instalar (não precisa de senha de administrador).
-            Se aparecer "O Windows protegeu o computador", clique em "Mais informações" → "Executar assim mesmo".
-
-            **Ubuntu / Debian:** baixe o `.deb` e dê dois cliques (abre a Central de Aplicativos).
-
-            **Qualquer Linux:** baixe `Pauta-x86_64.AppImage`, clique com o botão direito → Propriedades →
-            marque "Permitir executar como programa" e dê dois cliques.
+          body_path: release-notes.md
           files: |
             pkgs/Pauta-windows-instalador/Pauta.exe
             pkgs/Pauta-linux/*.deb

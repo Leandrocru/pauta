@@ -27,6 +27,7 @@ public:
 
     void setTool(Tool t);
     void runLaunchWindow(); // start-up chooser (wizard / open / demo)
+    void startupChecks();   // "what's new" after an update, then the update check
 
 protected:
     void closeEvent(QCloseEvent* e) override;
@@ -82,6 +83,8 @@ private:
     Tool m_tool = Tool::SpeedyEntry;
     QString m_path;
     bool m_updatingNav = false;
+    class Updater* m_updater = nullptr;
+    bool m_closingForUpdate = false;
 };
 
 } // namespace pauta

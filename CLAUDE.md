@@ -28,6 +28,13 @@ Interface e mensagens em **português do Brasil**. Comentários no código em in
 - **Linux / sessão na nuvem**: `sudo apt-get install -y qt6-base-dev ninja-build cmake` e então
   `cmake -S . -B build -G Ninja && cmake --build build`.
 - CI: `.github/workflows/build.yml` compila Windows e Linux e gera o instalador `Pauta.exe` (Inno Setup, `packaging/windows/pauta.iss`), o `.deb` (CPack) e o AppImage (linuxdeploy). Uma tag `vX.Y.Z` publica tudo em Releases; suba a versão em `CMakeLists.txt` antes.
+- **Publicar uma versão:** 1) suba `project(Pauta VERSION x.y.z)` no `CMakeLists.txt`; 2) escreva a seção
+  `## [x.y.z] — data` no topo do `CHANGELOG.md` (✨ Novidades / 🔧 Melhorias / 🐛 Correções, texto para o usuário);
+  3) commit, push, e quando o CI passar crie a tag `vx.y.z`. A página do Release usa essa seção
+  (`tools/release-notes.sh`), e o programa mostra o mesmo texto ao oferecer a atualização e em "O que há de novo".
+- `update/Updater` — consulta `api.github.com/repos/<PAUTA_GITHUB_REPO>/releases/latest`, oferece a versão nova,
+  baixa e instala (Windows: instalador com `/SILENT`, que reabre o Pauta; AppImage: troca o arquivo; .deb: abre na
+  Central de Aplicativos). Testes: `--update-check`, `--grab-whats-new arquivo.png`.
 - No Linux o executável se chama `pauta` (no Windows, `Pauta.exe`).
 - `build.cmd installer` gera o instalador localmente (precisa do Inno Setup 6).
 

@@ -59,3 +59,5 @@ Root: HKA; Subkey: "Software\Classes\Pauta.Partitura\shell\open\command"; ValueT
 
 [Run]
 Filename: "{app}\Pauta.exe"; Description: "{cm:LaunchProgram,Pauta}"; Flags: nowait postinstall skipifsilent
+; Atualização automática (instalação silenciosa feita pelo próprio Pauta): reabre o programa no fim.
+Filename: "{app}\Pauta.exe"; Flags: nowait skipifnotsilent

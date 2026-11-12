@@ -39,6 +39,15 @@ Baixe a versão mais recente na página **Releases** do repositório:
 - **Qualquer Linux:** `Pauta-x86_64.AppImage` → botão direito → Propriedades →
   "Permitir executar como programa" → dois cliques.
 
+## Atualizações
+
+O Pauta confere sozinho, ao abrir, se saiu uma versão nova (no máximo uma vez por dia). Se tiver,
+mostra o que mudou e atualiza com um clique: no Windows ele baixa e instala sozinho e abre de novo.
+Também dá para conferir em **Ajuda → Verificar atualizações**, ou desligar a verificação automática ali.
+A consulta vai só à página Releases do GitHub e não envia nenhum dado seu.
+
+O histórico de mudanças fica em [`CHANGELOG.md`](CHANGELOG.md).
+
 ## Compilar
 
 Requisitos: Visual Studio 2022 Build Tools (C++), CMake, Ninja e Qt 6.11 (MSVC 64-bit) em `C:\Qt\6.11.3\msvc2022_64`.

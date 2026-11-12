@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.21)
 # The icon resource (.rc) has no includes; skip cmcldeps, which breaks with some CMake/Ninja setups.
 set(CMAKE_NINJA_CMCLDEPS_RC OFF)
-project(Pauta VERSION 0.6.1 LANGUAGES CXX)
+project(Pauta VERSION 0.7.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Gui PrintSupport Xml)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Gui PrintSupport Xml Network)
 qt_standard_project_setup()
 
 # Qt's private zip reader (QZipReader) opens compressed MusicXML (.mxl). It lives in QtCore
@@ -36,6 +36,8 @@ qt_add_executable(Pauta WIN32
     src/playback/MidiOut.cpp
     src/playback/Player.h
     src/playback/Player.cpp
+    src/update/Updater.h
+    src/update/Updater.cpp
     src/edit/Editor.h
     src/edit/Editor.cpp
     src/ui/MainWindow.h
@@ -53,12 +55,15 @@ qt_add_executable(Pauta WIN32
 
 qt_add_resources(Pauta "resources"
     PREFIX "/"
-    FILES resources/fonts/Bravura.otf resources/pauta.png
+    FILES resources/fonts/Bravura.otf resources/pauta.png CHANGELOG.md
 )
 
 target_include_directories(Pauta PRIVATE src)
 target_compile_definitions(Pauta PRIVATE PROJECT_VERSION_STRING="${PROJECT_VERSION}")
-target_link_libraries(Pauta PRIVATE Qt6::Widgets Qt6::Gui Qt6::PrintSupport Qt6::Xml)
+# GitHub repository checked for new versions (Releases).
+set(PAUTA_GITHUB_REPO "Leandrocru/pauta" CACHE STRING "owner/name of the GitHub repository with the releases")
+target_compile_definitions(Pauta PRIVATE PAUTA_GITHUB_REPO="${PAUTA_GITHUB_REPO}")
+target_link_libraries(Pauta PRIVATE Qt6::Widgets Qt6::Gui Qt6::PrintSupport Qt6::Xml Qt6::Network)
 if(TARGET Qt6::CorePrivate AND TARGET Qt6::GuiPrivate)
     target_link_libraries(Pauta PRIVATE Qt6::CorePrivate Qt6::GuiPrivate)
 else()

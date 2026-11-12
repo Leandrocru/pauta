@@ -1,4 +1,14 @@
 #include "io/MusicXml.h"
+#include "update/Updater.h"
+
+#include <QDialog>
+#include <QEventLoop>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include "playback/MidiOut.h"
 #include "playback/Sequence.h"
 #include "io/NativeFormat.h"
@@ -121,9 +131,11 @@ int main(int argc, char* argv[])
     QCommandLineOption mouseOpt(QStringLiteral("test-mouse"),
         QStringLiteral("(teste) Ações de mouse: \"move|click:compasso:alvo:altura\" (alvo = fim ou índice da nota; altura = diatônico, 34 = Si4)."),
         QStringLiteral("acoes"));
+    QCommandLineOption whatsNewGrabOpt(QStringLiteral("grab-whats-new"), QStringLiteral("(teste) Captura a janela de novidades."), QStringLiteral("arquivo.png"));
+    QCommandLineOption updCheckOpt(QStringLiteral("update-check"), QStringLiteral("(teste) Consulta a última versão no GitHub e sai."));
     QCommandLineOption playCheckOpt(QStringLiteral("playback-check"), QStringLiteral("(teste) Monta a sequência de reprodução e abre a saída de som, sem tocar."));
     QCommandLineOption iconOpt(QStringLiteral("write-icon"), QStringLiteral("(desenvolvimento) Gera o ícone do programa."), QStringLiteral("pasta"));
-    cli.addOptions({ pdfOpt, pngOpt, benchOpt, emptyOpt, keysOpt, grabOpt, savePauta, toolOpt, scrollOpt, selectOpt, iconOpt, playCheckOpt, mouseOpt });
+    cli.addOptions({ pdfOpt, pngOpt, benchOpt, emptyOpt, keysOpt, grabOpt, savePauta, toolOpt, scrollOpt, selectOpt, iconOpt, playCheckOpt, mouseOpt, updCheckOpt, whatsNewGrabOpt });
     cli.addPositionalArgument(QStringLiteral("partitura"), QStringLiteral("Arquivo .pauta ou MusicXML a abrir."));
     cli.process(app);
 
@@ -140,6 +152,35 @@ int main(int argc, char* argv[])
         const bool ok = img.save(dir + QStringLiteral("/pauta.png")) && img.save(dir + QStringLiteral("/pauta.ico"));
         out << (ok ? "ok\n" : "falhou\n");
         return ok ? 0 : 1;
+    }
+    if (cli.isSet(whatsNewGrabOpt)) {
+        QDialog* d = Updater::whatsNewDialog(nullptr, QApplication::applicationVersion());
+        d->resize(620, 460);
+        d->show();
+        QApplication::processEvents();
+        d->grab().save(cli.value(whatsNewGrabOpt));
+        delete d;
+        return 0;
+    }
+    if (cli.isSet(updCheckOpt)) {
+        QNetworkAccessManager net;
+        QNetworkRequest req(QUrl(QStringLiteral("https://api.github.com/repos/%1/releases/latest").arg(QLatin1String(PAUTA_GITHUB_REPO))));
+        req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Pauta/%1").arg(QApplication::applicationVersion()));
+        QNetworkReply* r = net.get(req);
+        QEventLoop loop;
+        QObject::connect(r, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+        loop.exec();
+        if (r->error() != QNetworkReply::NoError) {
+            out << "erro: " << r->errorString() << Qt::endl;
+            return 1;
+        }
+        const QJsonObject o = QJsonDocument::fromJson(r->readAll()).object();
+        const QString tag = o.value(QStringLiteral("tag_name")).toString();
+        out << "atual=" << QApplication::applicationVersion() << " ultima=" << tag
+            << " mais_nova=" << (Updater::compareVersions(tag.mid(1), QApplication::applicationVersion()) > 0 ? "sim" : "nao")
+            << " pacotes=" << o.value(QStringLiteral("assets")).toArray().size()
+            << " notas_embutidas=" << (Updater::changelogFor(QApplication::applicationVersion()).isEmpty() ? "nao" : "sim") << Qt::endl;
+        return 0;
     }
     if (cli.isSet(playCheckOpt)) {
         Score s = Score::makeDemo();
@@ -200,6 +241,7 @@ int main(int argc, char* argv[])
     }
     w.show();
     if (!testMode && args.isEmpty() && !cli.isSet(emptyOpt)) w.runLaunchWindow();
+    if (!testMode) w.startupChecks();
 
     // Test hooks: type a key sequence into the score view and/or save a screenshot of the window.
     if (testMode) {
