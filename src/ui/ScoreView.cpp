@@ -29,6 +29,14 @@ QColor layerColor(int v, int alpha = 255)
     k.setAlpha(alpha);
     return k;
 }
+
+// Colour of the Simple Entry note caret (layer 1: a strong purple, as Finale users expect).
+QColor caretColor(int v, int alpha = 255)
+{
+    QColor k = v == 0 ? QColor(150, 40, 200) : layerColor(v);
+    k.setAlpha(alpha);
+    return k;
+}
 }
 
 ScoreView::ScoreView(Editor* editor, QWidget* parent) : QWidget(parent), m_ed(editor)
@@ -48,7 +56,7 @@ ScoreView::ScoreView(Editor* editor, QWidget* parent) : QWidget(parent), m_ed(ed
 
 void ScoreView::relayout()
 {
-    m_hover = Hit{}; // slot pointers die with the old layout
+    m_hover = Hit{}; // slot pointers die with the old layout (recomputed below)
     QElapsedTimer t;
     t.start();
     EngraveOptions opt;
@@ -58,6 +66,8 @@ void ScoreView::relayout()
     emit layoutTimed(m_layoutMs);
     updateGeometry();
     resize(sizeHint());
+    // Keep the Simple Entry preview under the mouse after the score changed (e.g. after a click).
+    if (m_tool == Tool::SimpleEntry && underMouse()) m_hover = hitTest(mapFromGlobal(QCursor::pos()));
     update();
 }
 
@@ -125,7 +135,7 @@ void ScoreView::updateToolCursor()
     switch (m_tool) {
     case Tool::Hand: setCursor(Qt::OpenHandCursor); break;
     case Tool::Zoom: setCursor(QCursor(icons::tool(Tool::Zoom).pixmap(24, 24), 8, 8)); break;
-    case Tool::SimpleEntry: setCursor(Qt::CrossCursor); break;
+    case Tool::SimpleEntry: setCursor(Qt::ArrowCursor); break;
     default: setCursor(Qt::ArrowCursor); break;
     }
 }
@@ -284,29 +294,115 @@ void ScoreView::paintSpeedy(QPainter& p, int page)
 
 void ScoreView::paintGhost(QPainter& p, int page)
 {
-    if (!m_hover.slot || m_hover.page != page) return;
-    const MeasureSlot& s = *m_hover.slot;
-    const qreal sp = m_layout.sp;
-    const int pos = staffPosition(m_hover.diatonic, s.clef);
-    const qreal x = m_hover.pagePt.x() - 0.6 * sp;
-    const qreal y = m_simpleRest ? m_layout.yForPosition(s, 0) : m_layout.yForPosition(s, pos);
-    p.save();
-    QPen ledger(kAccent);
-    ledger.setWidthF(0.16 * sp);
-    p.setPen(ledger);
-    if (!m_simpleRest) {
-        const qreal headW = smufl::Font::instance().advance(smufl::NoteheadBlack, sp);
-        for (int lp = 6; lp <= pos; lp += 2)
-            p.drawLine(QPointF(x - 0.35 * sp, m_layout.yForPosition(s, lp)), QPointF(x + headW + 0.35 * sp, m_layout.yForPosition(s, lp)));
-        for (int lp = -6; lp >= pos; lp -= 2)
-            p.drawLine(QPointF(x - 0.35 * sp, m_layout.yForPosition(s, lp)), QPointF(x + headW + 0.35 * sp, m_layout.yForPosition(s, lp)));
+    const int v = m_ed->cursor().voice;
+    if (m_hover.slot) {
+        // Mouse over a staff: the note shows exactly where the click will put it.
+        if (m_hover.page != page) return;
+        const InsertPoint ip = insertPointFor(m_hover);
+        if (!ip.slot) return;
+        if (!ip.onEvent && ip.index < int(ip.slot->eventX[size_t(v)].size())) {
+            // Inserting between notes: a thin bar marks the gap.
+            QPen bar(caretColor(v, 120));
+            bar.setWidthF(0.15 * m_layout.sp);
+            p.setPen(bar);
+            const qreal bx = ip.slot->eventX[size_t(v)][size_t(ip.index)] - 0.4 * m_layout.sp;
+            p.drawLine(QPointF(bx, ip.slot->staffTop - m_layout.sp), QPointF(bx, ip.slot->staffTop + 5 * m_layout.sp));
+        }
+        drawNoteFigure(p, *ip.slot, ip.x, m_hover.diatonic, m_simpleRest, caretColor(v, 220));
+        return;
     }
+    // No mouse over the score: show the keyboard caret at the insertion point.
+    const Cursor& c = m_ed->cursor();
+    const MeasureSlot* s = m_layout.slot(c.staff, c.measure);
+    if (!s || s->page != page) return;
+    const std::vector<qreal>& xs = s->eventX[size_t(c.voice)];
+    const bool onEvent = c.index < int(xs.size());
+    const qreal x = onEvent ? xs[size_t(c.index)] : s->appendX[size_t(c.voice)];
+    if (onEvent) {
+        p.fillRect(QRectF(x - 0.4 * m_layout.sp, s->staffTop - 1.5 * m_layout.sp, 2.0 * m_layout.sp, 7 * m_layout.sp), caretColor(v, 30));
+        return; // the existing note is highlighted; the figure would cover it
+    }
+    drawNoteFigure(p, *s, x, c.diatonic, m_simpleRest, caretColor(v, 220));
+}
+
+ScoreView::InsertPoint ScoreView::insertPointFor(const Hit& h) const
+{
+    InsertPoint ip;
+    if (!h.slot) return ip;
+    const MeasureSlot& s = *h.slot;
+    const qreal sp = m_layout.sp;
+    const int v = m_ed->cursor().voice;
+    const std::vector<qreal>& xs = s.eventX[size_t(v)];
+    ip.slot = h.slot;
+    // On an existing note column: the click adds (or removes) a note in that chord.
+    for (size_t k = 0; k < xs.size(); ++k) {
+        if (std::abs(h.pagePt.x() - (xs[k] + 0.6 * sp)) < 1.0 * sp) {
+            ip.index = int(k);
+            ip.x = xs[k];
+            ip.onEvent = true;
+            return ip;
+        }
+    }
+    // Elsewhere: inserted before the first note to the right (or at the end of the layer).
+    ip.index = 0;
+    while (ip.index < int(xs.size()) && xs[size_t(ip.index)] < h.pagePt.x()) ++ip.index;
+    ip.x = ip.index < int(xs.size()) ? xs[size_t(ip.index)] - 1.4 * sp : s.appendX[size_t(v)];
+    return ip;
+}
+
+// A complete note (head, stem, flags, ledger lines) or rest of the current duration.
+void ScoreView::drawNoteFigure(QPainter& p, const MeasureSlot& s, qreal x, int diatonic, bool rest, const QColor& color) const
+{
+    const qreal sp = m_layout.sp;
+    const auto& font = smufl::Font::instance();
+    const int durLog = m_ed->durLog();
     QGlyphRun run;
-    run.setRawFont(smufl::Font::instance().rawFont(sp));
-    const char16_t g = m_simpleRest ? smufl::restFor(m_ed->durLog()) : smufl::noteheadFor(m_ed->durLog());
-    run.setGlyphIndexes({ smufl::Font::instance().glyphIndex(g) });
-    run.setPositions({ QPointF(x, y) });
-    p.setPen(QColor(30, 111, 217, 150));
+    run.setRawFont(font.rawFont(sp));
+    p.save();
+    p.setPen(color);
+    if (rest) {
+        const int pos = durLog <= 0 ? 2 : 0;
+        run.setGlyphIndexes({ font.glyphIndex(smufl::restFor(durLog)) });
+        run.setPositions({ QPointF(x, m_layout.yForPosition(s, pos)) });
+        p.drawGlyphRun(QPointF(0, 0), run);
+        p.restore();
+        return;
+    }
+    const int pos = staffPosition(diatonic, s.clef);
+    const qreal y = m_layout.yForPosition(s, pos);
+    const char16_t head = smufl::noteheadFor(durLog);
+    const qreal headW = font.advance(head, sp);
+
+    QPen thin(color);
+    thin.setWidthF(0.16 * sp);
+    thin.setCapStyle(Qt::FlatCap);
+    p.setPen(thin);
+    for (int lp = 6; lp <= pos; lp += 2)
+        p.drawLine(QPointF(x - 0.35 * sp, m_layout.yForPosition(s, lp)), QPointF(x + headW + 0.35 * sp, m_layout.yForPosition(s, lp)));
+    for (int lp = -6; lp >= pos; lp -= 2)
+        p.drawLine(QPointF(x - 0.35 * sp, m_layout.yForPosition(s, lp)), QPointF(x + headW + 0.35 * sp, m_layout.yForPosition(s, lp)));
+
+    std::vector<quint32> glyphs{ font.glyphIndex(head) };
+    std::vector<QPointF> positions{ QPointF(x, y) };
+    if (durLog >= 1) {
+        const bool up = pos < 0;
+        const qreal stemW = 0.12 * sp;
+        const qreal len = (3.5 + 0.5 * std::max(0, durLog - 3)) * sp;
+        const qreal sx = up ? x + headW - stemW / 2 : x + stemW / 2;
+        const qreal tip = up ? std::min(y - len, m_layout.yForPosition(s, 0)) : std::max(y + len, m_layout.yForPosition(s, 0));
+        QPen stem(color);
+        stem.setWidthF(stemW);
+        stem.setCapStyle(Qt::FlatCap);
+        p.setPen(stem);
+        p.drawLine(QPointF(sx, y + (up ? -0.17 : 0.17) * sp), QPointF(sx, tip));
+        if (const char16_t f = smufl::flagFor(durLog, up)) {
+            glyphs.push_back(font.glyphIndex(f));
+            positions.push_back(QPointF(sx - stemW / 2, tip));
+        }
+    }
+    run.setGlyphIndexes(QList<quint32>(glyphs.begin(), glyphs.end()));
+    run.setPositions(QList<QPointF>(positions.begin(), positions.end()));
+    p.setPen(color);
     p.drawGlyphRun(QPointF(0, 0), run);
     p.restore();
 }
@@ -413,24 +509,13 @@ void ScoreView::keyPressEvent(QKeyEvent* e)
 
 void ScoreView::simpleEntryClick(const Hit& h)
 {
-    const MeasureSlot& s = *h.slot;
-    const qreal sp = m_layout.sp;
+    const InsertPoint ip = insertPointFor(h);
+    if (!ip.slot) return;
     Cursor c = m_ed->cursor();
-    c.staff = s.staff;
-    c.measure = s.measure;
+    c.staff = ip.slot->staff;
+    c.measure = ip.slot->measure;
     c.diatonic = h.diatonic;
-    // Clicking on an existing note column adds/removes that pitch (chord); elsewhere inserts.
-    for (size_t k = 0; k < s.eventX[size_t(c.voice)].size(); ++k) {
-        if (std::abs(h.pagePt.x() - (s.eventX[size_t(c.voice)][k] + 0.6 * sp)) < 1.0 * sp) {
-            c.index = int(k);
-            m_ed->setCursor(c);
-            if (m_simpleRest) m_ed->enterRest();
-            else m_ed->enterAtCursorPitch();
-            return;
-        }
-    }
-    c.index = 0;
-    while (c.index < int(s.eventX[size_t(c.voice)].size()) && s.eventX[size_t(c.voice)][size_t(c.index)] < h.pagePt.x()) ++c.index;
+    c.index = ip.index;
     m_ed->setCursor(c);
     if (m_simpleRest) m_ed->enterRest();
     else m_ed->enterAtCursorPitch();
@@ -505,6 +590,8 @@ void ScoreView::mouseMoveEvent(QMouseEvent* e)
     }
     if (m_tool == Tool::SimpleEntry) {
         const Hit h = hitTest(e->position());
+        // Over a staff the note figure itself is the pointer (as in Finale's Simple Entry).
+        setCursor(h.slot ? Qt::BlankCursor : Qt::ArrowCursor);
         if (h.slot != m_hover.slot || h.diatonic != m_hover.diatonic || h.pagePt != m_hover.pagePt) {
             m_hover = h;
             update();
@@ -523,6 +610,7 @@ void ScoreView::mouseReleaseEvent(QMouseEvent*)
 
 void ScoreView::leaveEvent(QEvent*)
 {
+    updateToolCursor();
     if (m_hover.slot) {
         m_hover = Hit{};
         update();

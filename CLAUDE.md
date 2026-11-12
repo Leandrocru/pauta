@@ -39,5 +39,6 @@ QT_QPA_PLATFORM=offscreen ./build/pauta --empty --test-keys "C D E F 4 G + Retur
     --grab janela.png --save-to teste.pauta                               # simula teclado e captura a janela
 # --tool N escolhe a ferramenta (índice em ui/Tools.h; 0 Seleção, 8 Entrada simples, 9 Entrada rápida),
 # --scroll-view liga a visualização contínua, --select-all seleciona tudo.
+# --test-mouse "click:1:fim:35 move:1:0:39" simula o mouse (compasso:fim ou índice da nota:altura diatônica).
 ```
 Olhe as imagens geradas para conferir a gravação. No Windows, ponha `C:\Qt\6.11.3\msvc2022_64\bin` no PATH.

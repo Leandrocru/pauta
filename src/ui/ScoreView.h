@@ -61,6 +61,15 @@ private:
     void paintSelection(QPainter& p, int page);
     void paintSpeedy(QPainter& p, int page);
     void paintGhost(QPainter& p, int page);
+    // Where a Simple Entry click at this hit would put the note (same rule for preview and click).
+    struct InsertPoint {
+        const MeasureSlot* slot = nullptr;
+        qreal x = 0;
+        int index = 0;
+        bool onEvent = false; // adds to / removes from the existing chord
+    };
+    InsertPoint insertPointFor(const Hit& h) const;
+    void drawNoteFigure(QPainter& p, const MeasureSlot& s, qreal x, int diatonic, bool rest, const QColor& color) const;
     void zoomAt(const QPointF& widgetPos, qreal factor);
     void simpleEntryClick(const Hit& h);
     void updateToolCursor();
