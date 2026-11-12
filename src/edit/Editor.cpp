@@ -243,6 +243,46 @@ void Editor::enterStep(int step)
     emit cursorChanged();
 }
 
+void Editor::changeDurationInPlace(int durLog)
+{
+    m_durLog = durLog;
+    if (!currentEvent()) {
+        emit cursorChanged(); // only the caret's duration changes
+        return;
+    }
+    mutate(QStringLiteral("Alterar duração"), [&] {
+        Event* e = currentEventMut();
+        Event changed = *e;
+        changed.durLog = durLog;
+        if (measure().filled(m_cursor.voice) - e->duration() + changed.duration() > m_score.time.capacity()) {
+            emit message(tooLong());
+            return false;
+        }
+        e->durLog = durLog;
+        return true;
+    });
+}
+
+void Editor::addStepToChord(int step)
+{
+    const int cur = m_cursor.diatonic;
+    const int base = cur - (((cur % 7) + 7) % 7) + step;
+    int best = base;
+    for (int c : { base - 7, base + 7 })
+        if (std::abs(c - cur) < std::abs(best - cur)) best = c;
+    m_cursor.diatonic = std::clamp(best, 7, 7 * 8 + 6);
+    mutate(QStringLiteral("Nota no acorde"), [&] {
+        Event* e = targetEvent();
+        if (!e || e->isRest()) return false;
+        for (const Pitch& p : e->pitches)
+            if (p.diatonic() == m_cursor.diatonic) return false;
+        e->pitches.push_back(cursorPitch());
+        e->sortPitches();
+        return true;
+    });
+    emit cursorChanged();
+}
+
 void Editor::enterAtCursorPitch()
 {
     if (!currentEvent()) {

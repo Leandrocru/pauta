@@ -52,6 +52,8 @@ public:
     // Note entry
     void enterDuration(int durLog);  // number keys: insert note / change duration
     void enterStep(int step);        // letter keys C..B
+    void changeDurationInPlace(int durLog); // Simple Entry: number on a selected note
+    void addStepToChord(int step);   // Simple Entry: Shift+letter adds to the current/previous chord
     void enterAtCursorPitch();       // Enter: insert note / toggle pitch in chord
     void enterRest();                // R: insert rest / toggle note<->rest
     void deleteEvent();              // Delete

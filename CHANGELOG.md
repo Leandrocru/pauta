@@ -2,6 +2,16 @@
 
 Todas as mudanças de cada versão. A mais recente fica em cima.
 
+## [0.7.1] — 2026-11-12
+
+### 🔧 Melhorias
+- **Entrada simples pelo teclado, como no Finale:** a nota roxa agora segue as setas.
+  - **↑ / ↓** mudam a altura (**Ctrl** muda a oitava) e **← / →** levam a nota roxa de nota em nota.
+  - **1–8** escolhem a duração da nota roxa, sem inserir. Sobre uma nota existente, mudam a duração dela.
+  - **Enter** ou **A–G** inserem a nota; Enter sobre uma nota existente acrescenta ao acorde.
+  - **Shift + A–G** acrescenta a nota ao acorde anterior, e **0** ou **R** inserem pausa.
+- Ao usar o teclado, a nota roxa deixa de seguir o mouse e volta para o cursor.
+
 ## [0.7.0] — 2026-11-12
 
 ### ✨ Novidades

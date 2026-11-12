@@ -319,8 +319,10 @@ void ScoreView::paintGhost(QPainter& p, int page)
     const bool onEvent = c.index < int(xs.size());
     const qreal x = onEvent ? xs[size_t(c.index)] : s->appendX[size_t(c.voice)];
     if (onEvent) {
-        p.fillRect(QRectF(x - 0.4 * m_layout.sp, s->staffTop - 1.5 * m_layout.sp, 2.0 * m_layout.sp, 7 * m_layout.sp), caretColor(v, 30));
-        return; // the existing note is highlighted; the figure would cover it
+        // The note under the caret is selected; the purple figure shows where Enter would add a chord note.
+        p.fillRect(QRectF(x - 0.5 * m_layout.sp, s->staffTop - 1.5 * m_layout.sp, 2.2 * m_layout.sp, 7 * m_layout.sp), caretColor(v, 35));
+        drawNoteFigure(p, *s, x, c.diatonic, m_simpleRest, caretColor(v, 150));
+        return;
     }
     drawNoteFigure(p, *s, x, c.diatonic, m_simpleRest, caretColor(v, 220));
 }
@@ -489,8 +491,31 @@ void ScoreView::keyPressEvent(QKeyEvent* e)
         return;
     }
     switch (m_tool) {
+    case Tool::SimpleEntry: {
+        // The keyboard takes over the caret: the preview leaves the mouse and follows the keys.
+        if (m_hover.slot) {
+            m_hover = Hit{};
+            setCursor(Qt::ArrowCursor);
+            update();
+        }
+        const auto mods = e->modifiers();
+        const bool ctrl = mods & Qt::ControlModifier, alt = mods & Qt::AltModifier, shift = mods & Qt::ShiftModifier;
+        const int k = e->key();
+        if (!ctrl && !alt && k >= Qt::Key_1 && k <= Qt::Key_8) {
+            static const int map[8] = { 6, 5, 4, 3, 2, 1, 0, -1 }; // 5 = quarter, as in Finale
+            m_ed->changeDurationInPlace(map[k - Qt::Key_1]);
+            return;
+        }
+        if (!ctrl && !alt && k == Qt::Key_0) { m_ed->enterRest(); return; }
+        if (shift && !ctrl && !alt && k >= Qt::Key_A && k <= Qt::Key_G) {
+            static const QString letters = QStringLiteral("CDEFGAB");
+            m_ed->addStepToChord(letters.indexOf(QChar(char16_t(k))));
+            return;
+        }
+        if (entryKeys(e)) return;
+        break;
+    }
     case Tool::SpeedyEntry:
-    case Tool::SimpleEntry:
         if (entryKeys(e)) return;
         break;
     case Tool::Selection:
