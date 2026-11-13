@@ -8,6 +8,7 @@ namespace pauta::icons {
 
 QIcon tool(Tool t);
 QIcon glyph(char16_t smuflCodepoint);
+QIcon dynamic(const QString& text); // "mf" drawn with the music font
 
 enum class Transport { Rewind, Play, Stop, Record };
 QIcon transport(Transport t);

@@ -589,6 +589,30 @@ void ScoreView::mousePressEvent(QMouseEvent* e)
         m_ed->setCursor(c);
         return;
     }
+    case Tool::Articulation:
+    case Tool::Expression: {
+        // Click on a note: it gets the articulation / dynamic chosen in the palette.
+        if (!h.slot) return;
+        const qreal sp = m_layout.sp;
+        Cursor c = m_ed->cursor();
+        int bestV = -1, bestK = -1;
+        qreal bestD = 1.6 * sp;
+        for (int v = 0; v < kVoices; ++v)
+            for (size_t k = 0; k < h.slot->eventX[size_t(v)].size(); ++k) {
+                const qreal d = std::abs(h.pagePt.x() - (h.slot->eventX[size_t(v)][k] + 0.6 * sp));
+                if (d < bestD) { bestD = d; bestV = v; bestK = int(k); }
+            }
+        if (bestK < 0) return;
+        m_ed->clearSelection();
+        c.staff = h.slot->staff;
+        c.measure = h.slot->measure;
+        c.voice = bestV;
+        c.index = bestK;
+        m_ed->setCursor(c);
+        if (m_tool == Tool::Articulation) m_ed->toggleArticulation(m_armedArtic);
+        else m_ed->setDynamic(m_armedDyn);
+        return;
+    }
     case Tool::Staff:
     case Tool::Clef:
     case Tool::KeySig:

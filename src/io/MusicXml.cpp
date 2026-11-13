@@ -192,6 +192,7 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
              me = me.nextSiblingElement(QStringLiteral("measure"))) {
             std::vector<StaffState> st(staves.size());
             Frac pos, lastStart;
+            std::array<int, 8> pendingDynamic{}; // per staff: dynamic waiting for its note
             auto staffIndex = [&](const QDomElement& e) {
                 const int n = e.firstChildElement(QStringLiteral("staff")).text().toInt();
                 return std::clamp(n <= 0 ? 0 : n - 1, 0, int(st.size()) - 1);
@@ -228,7 +229,21 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
                         if (firstMeasure) staves[size_t(n)].clef = cl;
                         else if (cl != staves[size_t(n)].clef) clefChanged = true;
                     }
-                } else if (tag == u"direction" || tag == u"sound") {
+                } else if (tag == u"direction") {
+                    // Dynamics (<direction-type><dynamics><mf/>) attach to the next note of that staff.
+                    for (QDomElement dt = el.firstChildElement(QStringLiteral("direction-type")); !dt.isNull();
+                         dt = dt.nextSiblingElement(QStringLiteral("direction-type"))) {
+                        const QDomElement dyn = dt.firstChildElement(QStringLiteral("dynamics"));
+                        if (dyn.isNull() || dyn.firstChildElement().isNull()) continue;
+                        const int d = dynamicFromText(dyn.firstChildElement().tagName());
+                        if (d) pendingDynamic[size_t(staffIndex(el))] = d;
+                    }
+                    const QDomElement snd = el.firstChildElement(QStringLiteral("sound"));
+                    if (!tempoSet && !snd.isNull() && snd.hasAttribute(QStringLiteral("tempo"))) {
+                        s.tempo = std::clamp(int(std::lround(snd.attribute(QStringLiteral("tempo")).toDouble())), 20, 400);
+                        tempoSet = true;
+                    }
+                } else if (tag == u"sound") {
                     // First tempo mark (<sound tempo="...">) becomes the playback tempo.
                     const QDomElement snd = tag == u"sound" ? el : el.firstChildElement(QStringLiteral("sound"));
                     if (!tempoSet && !snd.isNull() && snd.hasAttribute(QStringLiteral("tempo"))) {
@@ -318,6 +333,25 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
                         continue;
                     }
                     if (!isRest) ev.pitches = { p };
+                    // Articulations, fermata and note-level dynamics.
+                    const QDomElement nots = el.firstChildElement(QStringLiteral("notations"));
+                    if (!nots.isNull()) {
+                        const QDomElement arts = nots.firstChildElement(QStringLiteral("articulations"));
+                        static const std::pair<const char*, unsigned> artMap[] = {
+                            { "staccato", ArticStaccato }, { "accent", ArticAccent }, { "tenuto", ArticTenuto },
+                            { "strong-accent", ArticMarcato }, { "staccatissimo", ArticStaccatissimo },
+                            { "spiccato", ArticStaccatissimo }, { "detached-legato", ArticTenuto | ArticStaccato } };
+                        for (const auto& [name, bit] : artMap)
+                            if (!arts.firstChildElement(QLatin1String(name)).isNull()) ev.articulations |= bit;
+                        if (!nots.firstChildElement(QStringLiteral("fermata")).isNull()) ev.articulations |= ArticFermata;
+                        const QDomElement nd = nots.firstChildElement(QStringLiteral("dynamics"));
+                        if (!nd.isNull() && !nd.firstChildElement().isNull()) ev.dynamic = dynamicFromText(nd.firstChildElement().tagName());
+                    }
+                    if (L == 0 || layer.empty()) {
+                        int& pd = pendingDynamic[size_t(staffIndex(el))];
+                        if (pd && !ev.dynamic) ev.dynamic = pd;
+                        pd = 0;
+                    }
                     layer.push_back(std::move(ev));
                     ss.filled[size_t(L)] = start + dur;
                 }

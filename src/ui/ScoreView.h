@@ -26,6 +26,8 @@ public:
     void setContinuous(bool c);
     void setSimpleRestMode(bool rest) { m_simpleRest = rest; update(); }
     void setPlaybackMeasure(int measure); // -1 = none
+    void setArmedArticulation(unsigned a) { m_armedArtic = a; }
+    void setArmedDynamic(int d) { m_armedDyn = d; }
 
     QRectF pageRect(int page) const; // in widget pixels
     int pageAt(qreal y) const;       // page under a widget y coordinate
@@ -83,6 +85,8 @@ private:
     bool m_continuous = false;
     bool m_simpleRest = false;
     int m_playMeasure = -1;
+    unsigned m_armedArtic = 1; // ArticStaccato
+    int m_armedDyn = 5;        // DynMF
 
     // Mouse interaction state
     bool m_selecting = false;

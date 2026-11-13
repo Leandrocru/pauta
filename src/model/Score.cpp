@@ -24,6 +24,51 @@ Frac Event::duration() const
     return inTuplet() ? base * Frac(tupletNormal, tupletActual) : base;
 }
 
+QString dynamicText(int d)
+{
+    static const char* t[DynCount] = { "", "ppp", "pp", "p", "mp", "mf", "f", "ff", "fff", "sfz", "sf", "fp" };
+    return d > 0 && d < DynCount ? QString::fromLatin1(t[d]) : QString();
+}
+
+int dynamicFromText(const QString& text)
+{
+    for (int d = 1; d < DynCount; ++d)
+        if (dynamicText(d) == text.trimmed().toLower()) return d;
+    return 0;
+}
+
+int dynamicVelocity(int d)
+{
+    static const int v[DynCount] = { 80, 22, 36, 50, 64, 80, 96, 112, 126, 115, 110, 110 };
+    return d >= 0 && d < DynCount ? v[d] : 80;
+}
+
+QString articulationName(unsigned a)
+{
+    switch (a) {
+    case ArticStaccato: return QStringLiteral("Staccato");
+    case ArticAccent: return QStringLiteral("Acento");
+    case ArticTenuto: return QStringLiteral("Tenuto");
+    case ArticMarcato: return QStringLiteral("Marcato");
+    case ArticStaccatissimo: return QStringLiteral("Staccatissimo");
+    case ArticFermata: return QStringLiteral("Fermata");
+    default: return QString();
+    }
+}
+
+QString articulationKey(unsigned a)
+{
+    switch (a) {
+    case ArticStaccato: return QStringLiteral("staccato");
+    case ArticAccent: return QStringLiteral("accent");
+    case ArticTenuto: return QStringLiteral("tenuto");
+    case ArticMarcato: return QStringLiteral("marcato");
+    case ArticStaccatissimo: return QStringLiteral("staccatissimo");
+    case ArticFermata: return QStringLiteral("fermata");
+    default: return QString();
+    }
+}
+
 int tupletNormalFor(int actual)
 {
     if (actual == 2) return 3;   // duplet (compound meters)

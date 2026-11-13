@@ -76,6 +76,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     buildMenus();
     buildToolPalette();
     buildSimplePalette();
+    buildMarksPalette();
     buildNavigationBar();
 
     connect(m_view, &ScoreView::ensureVisibleRequested, this, [this](const QRect& r) {
@@ -311,6 +312,67 @@ void MainWindow::buildToolPalette()
         connect(a, &QAction::triggered, this, [this, t = info.tool] { setTool(t); });
     }
     m_windowMenu->addAction(m_toolPalette->toggleViewAction());
+}
+
+// Articulations and dynamics: a click applies the mark to the selected region or to the note at the
+// cursor, and "arms" it for the Articulation / Expression tools (then a click on a note applies it).
+void MainWindow::buildMarksPalette()
+{
+    auto* dock = new QDockWidget(QStringLiteral("Articulações e dinâmicas"), this);
+    dock->setObjectName(QStringLiteral("marksPalette"));
+    dock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable | QDockWidget::DockWidgetClosable);
+    auto* w = new QWidget;
+    auto* grid = new QGridLayout(w);
+    grid->setContentsMargins(4, 4, 4, 4);
+    grid->setSpacing(2);
+    int n = 0;
+    auto place = [&](QAction* a) {
+        auto* b = new QToolButton;
+        b->setDefaultAction(a);
+        b->setIconSize(QSize(26, 26));
+        b->setAutoRaise(true);
+        b->setFocusPolicy(Qt::NoFocus);
+        grid->addWidget(b, n / 3, n % 3);
+        ++n;
+    };
+    auto* articGroup = new QActionGroup(this);
+    const std::pair<unsigned, char16_t> artics[] = {
+        { ArticStaccato, 0xE4A2 }, { ArticAccent, 0xE4A0 }, { ArticTenuto, 0xE4A4 },
+        { ArticMarcato, 0xE4AC }, { ArticStaccatissimo, 0xE4A6 }, { ArticFermata, 0xE4C0 },
+    };
+    for (const auto& [bit, cp] : artics) {
+        QAction* a = new QAction(icons::glyph(cp), articulationName(bit), this);
+        a->setCheckable(true);
+        a->setToolTip(QStringLiteral("%1 — aplica na nota do cursor ou na seleção; com a ferramenta Articulação, clique nas notas").arg(articulationName(bit)));
+        articGroup->addAction(a);
+        if (bit == ArticStaccato) a->setChecked(true);
+        connect(a, &QAction::triggered, this, [this, bit = bit] {
+            m_view->setArmedArticulation(bit);
+            if (m_tool != Tool::Articulation) m_editor->toggleArticulation(bit);
+            m_view->setFocus();
+        });
+        place(a);
+    }
+    n = ((n + 2) / 3) * 3; // dynamics start on a new row
+    auto* dynGroup = new QActionGroup(this);
+    for (int d = DynPPP; d < DynCount; ++d) {
+        QAction* a = new QAction(icons::dynamic(dynamicText(d)), dynamicText(d), this);
+        a->setCheckable(true);
+        a->setToolTip(QStringLiteral("%1 — aplica na nota do cursor ou no início da seleção; com a ferramenta Expressão, clique na nota").arg(dynamicText(d)));
+        dynGroup->addAction(a);
+        if (d == DynMF) a->setChecked(true);
+        connect(a, &QAction::triggered, this, [this, d] {
+            m_view->setArmedDynamic(d);
+            if (m_tool != Tool::Expression) m_editor->setDynamic(d);
+            m_view->setFocus();
+        });
+        place(a);
+    }
+    grid->setRowStretch(n / 3 + 1, 1);
+    w->setMinimumWidth(140);
+    dock->setWidget(w);
+    addDockWidget(Qt::LeftDockWidgetArea, dock);
+    m_windowMenu->addAction(dock->toggleViewAction());
 }
 
 void MainWindow::buildSimplePalette()
@@ -570,7 +632,17 @@ void MainWindow::rebuildToolMenu()
         disabledAction(m_toolMenu, QStringLiteral("Usar teclado MIDI para a altura"));
         break;
     default:
-        disabledAction(m_toolMenu, info.name);
+        if (m_tool == Tool::Articulation) {
+            for (unsigned a : kArticAll)
+                m_toolMenu->addAction(articulationName(a), this, [this, a] { m_view->setArmedArticulation(a); });
+        } else if (m_tool == Tool::Expression) {
+            for (int d = DynPPP; d < DynCount; ++d)
+                m_toolMenu->addAction(dynamicText(d), this, [this, d] { m_view->setArmedDynamic(d); });
+            m_toolMenu->addSeparator();
+            m_toolMenu->addAction(QStringLiteral("Remover dinâmica da nota"), this, [this] { m_editor->setDynamic(0); });
+        } else {
+            disabledAction(m_toolMenu, info.name);
+        }
         break;
     }
 }

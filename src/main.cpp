@@ -191,6 +191,10 @@ int main(int argc, char* argv[])
         }
         const playback::Sequence seq = playback::buildSequence(s, 0);
         auto midi = playback::createMidiOut();
+        QStringList vels;
+        for (const playback::MidiMsg& m : seq.messages)
+            if ((m.status & 0xF0) == 0x90) vels << QString::number(m.data2);
+        out << "volumes=" << vels.join(QLatin1Char(',')) << Qt::endl;
         out << "notas=" << seq.noteCount << " mensagens=" << seq.messages.size()
             << " duracao=" << QString::number(seq.length, 'f', 2) << "s compassos=" << seq.measureStart.size()
             << " saida=\"" << midi->name() << "\" ok=" << (midi->ok() ? "sim" : "nao") << Qt::endl;

@@ -36,6 +36,7 @@ private:
     void buildMenus();
     void buildToolPalette();
     void buildSimplePalette();
+    void buildMarksPalette();
     void buildNavigationBar();
     void rebuildToolMenu();
     void updateStatus();

@@ -24,6 +24,8 @@ XML UTF-8, legível e editável à mão.
 
 - `<tempo qpm="96"/>` em `<score>`: andamento para a reprodução (semínimas por minuto).
 - `tuplet="3:2"` em `<chord>`/`<rest>`: quiáltera (3 no tempo de 2); `tupletStart="1"` marca o início do grupo.
+- `artic="staccato,accent"` em `<chord>`/`<rest>`: articulações (`staccato`, `accent`, `tenuto`, `marcato`, `staccatissimo`, `fermata`).
+- `dyn="mf"` em `<chord>`/`<rest>`: dinâmica que começa nessa nota (`ppp`…`fff`, `sfz`, `sf`, `fp`).
 - `tie="1"` em `<note>`: ligadura de valor com a mesma nota no próximo evento da pauta.
 - `alter` em `<note>`: -2..2 (bemol duplo … sustenido duplo). A nota escrita é
   sempre explícita; a armadura só decide quais acidentes aparecem.

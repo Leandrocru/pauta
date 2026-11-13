@@ -51,7 +51,7 @@ Sequence buildSequence(const Score& score, int fromMeasure)
     seq.measureStart = starts;
     seq.length = t;
 
-    struct Note { double start, end; int pitch, channel; };
+    struct Note { double start, end; int pitch, channel, velocity; };
     std::vector<Note> notes;
 
     for (size_t s = 0; s < score.staves.size(); ++s) {
@@ -60,6 +60,36 @@ Sequence buildSequence(const Score& score, int fromMeasure)
         int channel = int(s) < 9 ? int(s) : int(s) + 1;
         channel = std::min(channel, 15);
         seq.messages.push_back({ 0.0, uint8_t(0xC0 | channel), uint8_t(gmProgramFor(st.name)), 0 });
+
+        // Dynamic level along this staff (marks in any layer, in time order). One-off accents
+        // (sfz, sf) do not change the level; fp is loud once, then piano.
+        std::vector<std::pair<double, int>> levels; // (time, velocity)
+        for (int v = 0; v < kVoices; ++v)
+            for (int m = fromMeasure; m < nMeasures; ++m) {
+                Frac p;
+                for (const Event& e : st.measures[size_t(m)].voice(v)) {
+                    const double t0 = starts[size_t(m - fromMeasure)] + p.toDouble() * secPerWhole;
+                    p += e.duration();
+                    if (!e.dynamic || e.dynamic == DynSFZ || e.dynamic == DynSF) continue;
+                    levels.push_back({ t0, dynamicVelocity(e.dynamic == DynFP ? int(DynP) : e.dynamic) });
+                }
+            }
+        // Marks placed before the playback start still set the level.
+        int initial = 80;
+        for (int m = 0; m < fromMeasure; ++m)
+            for (int v = 0; v < kVoices; ++v)
+                for (const Event& e : st.measures[size_t(m)].voice(v))
+                    if (e.dynamic && e.dynamic != DynSFZ && e.dynamic != DynSF)
+                        initial = dynamicVelocity(e.dynamic == DynFP ? int(DynP) : e.dynamic);
+        std::stable_sort(levels.begin(), levels.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+        auto levelAt = [&](double t) {
+            int vel = initial;
+            for (const auto& [time, v] : levels) {
+                if (time > t + 1e-6) break;
+                vel = v;
+            }
+            return vel;
+        };
 
         for (int v = 0; v < kVoices; ++v) {
             std::map<int, size_t> tied; // diatonic -> note still sounding through a tie
@@ -70,15 +100,24 @@ Sequence buildSequence(const Score& score, int fromMeasure)
                     const double dur = e.duration().toDouble() * secPerWhole;
                     pos += e.duration();
                     std::map<int, size_t> stillTied;
+                    // Articulation: length and accent.
+                    double len = 0.92;
+                    if (e.articulations & ArticTenuto) len = 1.0;
+                    if (e.articulations & ArticStaccato) len = 0.5;
+                    if (e.articulations & ArticStaccatissimo) len = 0.3;
+                    int vel = (e.dynamic == DynSFZ || e.dynamic == DynSF || e.dynamic == DynFP) ? dynamicVelocity(e.dynamic) : levelAt(start);
+                    if (e.articulations & ArticAccent) vel += 18;
+                    if (e.articulations & ArticMarcato) vel += 25;
+                    vel = std::clamp(vel, 1, 127);
                     for (const Pitch& p : e.pitches) {
                         auto it = tied.find(p.diatonic());
                         size_t idx;
                         if (it != tied.end()) {
                             idx = it->second;                 // continuation of a tie: no new attack
-                            notes[idx].end = start + dur * (p.tie ? 1.0 : 0.92);
+                            notes[idx].end = start + dur * (p.tie ? 1.0 : len);
                         } else {
                             idx = notes.size();
-                            notes.push_back({ start, start + dur * (p.tie ? 1.0 : 0.92), midiPitch(p), channel });
+                            notes.push_back({ start, start + dur * (p.tie ? 1.0 : len), midiPitch(p), channel, vel });
                         }
                         if (p.tie) stillTied[p.diatonic()] = idx;
                     }
@@ -90,7 +129,7 @@ Sequence buildSequence(const Score& score, int fromMeasure)
 
     seq.noteCount = int(notes.size());
     for (const Note& n : notes) {
-        seq.messages.push_back({ n.start, uint8_t(0x90 | n.channel), uint8_t(n.pitch), 80 });
+        seq.messages.push_back({ n.start, uint8_t(0x90 | n.channel), uint8_t(n.pitch), uint8_t(n.velocity) });
         seq.messages.push_back({ std::max(n.end, n.start + 0.02), uint8_t(0x80 | n.channel), uint8_t(n.pitch), 0 });
     }
     std::stable_sort(seq.messages.begin(), seq.messages.end(), [](const MidiMsg& a, const MidiMsg& b) {

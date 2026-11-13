@@ -382,6 +382,49 @@ void Editor::toggleTie()
     });
 }
 
+void Editor::toggleArticulation(unsigned artic)
+{
+    mutate(articulationName(artic), [&] {
+        if (m_sel.active) {
+            // On a region: add it everywhere, or remove it if every note already has it.
+            std::vector<Event*> notes;
+            for (int s = m_sel.staff0; s <= m_sel.staff1; ++s)
+                for (int m = m_sel.measure0; m <= m_sel.measure1; ++m)
+                    for (int v = 0; v < kVoices; ++v)
+                        for (Event& e : m_score.staves[size_t(s)].measures[size_t(m)].voice(v))
+                            if (!e.isRest() || artic == ArticFermata) notes.push_back(&e);
+            if (notes.empty()) return false;
+            const bool all = std::all_of(notes.begin(), notes.end(), [&](const Event* e) { return e->articulations & artic; });
+            for (Event* e : notes) e->articulations = all ? (e->articulations & ~artic) : (e->articulations | artic);
+            return true;
+        }
+        Event* e = targetEvent();
+        if (!e || (e->isRest() && artic != ArticFermata)) return false;
+        e->articulations ^= artic;
+        return true;
+    });
+}
+
+void Editor::setDynamic(int dynamic)
+{
+    mutate(dynamic ? dynamicText(dynamic) : QStringLiteral("Remover dinâmica"), [&] {
+        if (m_sel.active) {
+            bool any = false;
+            for (int s = m_sel.staff0; s <= m_sel.staff1; ++s) {
+                auto& meas = m_score.staves[size_t(s)].measures[size_t(m_sel.measure0)];
+                for (int v = 0; v < kVoices && !any; ++v)
+                    if (!meas.voice(v).empty()) { meas.voice(v).front().dynamic = dynamic; any = true; }
+                any = false; // one per staff
+            }
+            return true;
+        }
+        Event* e = targetEvent();
+        if (!e) return false;
+        e->dynamic = (e->dynamic == dynamic) ? 0 : dynamic; // same mark again removes it
+        return true;
+    });
+}
+
 void Editor::naturalize()
 {
     mutate(QStringLiteral("Bequadro"), [&] {

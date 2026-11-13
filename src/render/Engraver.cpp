@@ -344,6 +344,8 @@ private:
     void drawBeamGroup(PageLayout& pg, const std::vector<Event>& evs, const StaffMeasureInfo& smi, const std::vector<int>& group,
                        const std::vector<qreal>& xs, qreal staffTop);
     void drawTie(int page, qreal x0, qreal x1, qreal y, bool above);
+    void drawMarks(PageLayout& pg, const Event& e, const EventInfo& info, qreal x, qreal staffTop);
+    void glyphCentered(PageLayout& pg, char16_t cp, qreal cx, qreal cy);
     void drawTuplets(PageLayout& pg, const std::vector<Event>& evs, const StaffMeasureInfo& vi,
                      const std::vector<qreal>& xs, qreal staffTop);
     void handleTies(int page, int staff, int voice, const Event& e, const EventInfo& info, qreal x, qreal staffTop,
@@ -607,6 +609,83 @@ void Builder::drawBeamGroup(PageLayout& pg, const std::vector<Event>& evs, const
     }
 }
 
+void Builder::glyphCentered(PageLayout& pg, char16_t cp, qreal cx, qreal cy)
+{
+    const QRectF bb = m_font.bbox(cp, m_sp);
+    glyph(pg, cp, cx - bb.center().x(), cy - bb.center().y());
+}
+
+// Articulations next to the notehead (away from the stem), fermata above the staff,
+// dynamics below the staff.
+void Builder::drawMarks(PageLayout& pg, const Event& e, const EventInfo& info, qreal x, qreal staffTop)
+{
+    const qreal sp = m_sp;
+    const char16_t head = e.isRest() ? smufl::restFor(e.durLog) : smufl::noteheadFor(e.durLog);
+    const qreal cx = x + m_font.advance(head, sp) / 2;
+
+    qreal lowestMark = 0; // bottom of marks drawn under the notes (keeps dynamics clear of them)
+    if (!e.isRest() && (e.articulations & ~unsigned(ArticFermata | ArticMarcato))) {
+        // Notehead side: below for up-stems, above for down-stems (whole notes: below).
+        const bool below = e.durLog <= 0 ? true : info.stemUp;
+        int p = below ? info.pos.front() - 2 : info.pos.back() + 2;
+        auto inSpace = [&](int q) {
+            if (q >= -4 && q <= 4 && q % 2 == 0) return below ? q - 1 : q + 1; // never on a staff line
+            return q;
+        };
+        // Order outward from the note: staccato/staccatissimo, tenuto, accent/marcato.
+        static const std::pair<unsigned, std::pair<char16_t, char16_t>> order[] = {
+            { ArticStaccato, { 0xE4A2, 0xE4A3 } }, { ArticStaccatissimo, { 0xE4A6, 0xE4A7 } },
+            { ArticTenuto, { 0xE4A4, 0xE4A5 } }, { ArticAccent, { 0xE4A0, 0xE4A1 } },
+        };
+        for (const auto& [bit, glyphs] : order) {
+            if (!(e.articulations & bit)) continue;
+            const int q = inSpace(p);
+            glyphCentered(pg, below ? glyphs.second : glyphs.first, cx, y(staffTop, q));
+            if (below) lowestMark = std::max(lowestMark, y(staffTop, q) + 0.6 * sp);
+            p = below ? q - 2 : q + 2;
+        }
+    }
+
+    if (!e.isRest() && (e.articulations & ArticMarcato)) {
+        // Marcato always goes above (clear of the staff and of an up-stem).
+        int q = info.pos.back() + 2;
+        if (e.durLog >= 1 && info.stemUp) q = info.pos.back() + 9;
+        q = std::max(q, 6);
+        glyphCentered(pg, 0xE4AC, cx, y(staffTop, q));
+    }
+
+    if (e.articulations & ArticFermata) {
+        // Above everything: staff, notes and an up-stem.
+        qreal top = y(staffTop, 4) - 1.2 * sp;
+        if (!e.isRest()) {
+            const qreal noteTop = y(staffTop, info.pos.back()) - (e.durLog >= 1 && info.stemUp ? kStemLen * sp : 0.8 * sp);
+            top = std::min(top, noteTop - 0.6 * sp);
+        }
+        const QRectF bb = m_font.bbox(0xE4C0, sp);
+        glyph(pg, 0xE4C0, cx - bb.center().x(), top - bb.bottom());
+    }
+
+    if (e.dynamic) {
+        // Below the staff (and below low notes / down-stems), left-aligned with the notehead.
+        qreal base = staffTop + 4 * sp + 3.0 * sp;
+        if (!e.isRest()) {
+            const qreal noteBottom = y(staffTop, info.pos.front()) + (e.durLog >= 1 && !info.stemUp ? kStemLen * sp : 0.6 * sp);
+            base = std::max(base, noteBottom + 2.2 * sp);
+        }
+        if (lowestMark > 0) base = std::max(base, lowestMark + 2.0 * sp);
+        const QString text = dynamicText(e.dynamic);
+        static const QString letters = QStringLiteral("pmfrsz");
+        static const char16_t cps[6] = { 0xE520, 0xE521, 0xE522, 0xE523, 0xE524, 0xE525 };
+        qreal dx = x - 0.4 * sp;
+        for (QChar c : text) {
+            const int i = letters.indexOf(c);
+            if (i < 0) continue;
+            glyph(pg, cps[i], dx, base);
+            dx += m_font.advance(cps[i], sp) - 0.08 * sp; // dynamics letters sit a little tighter
+        }
+    }
+}
+
 void Builder::drawTuplets(PageLayout& pg, const std::vector<Event>& evs, const StaffMeasureInfo& vi,
                           const std::vector<qreal>& xs, qreal staffTop)
 {
@@ -788,6 +867,7 @@ void Builder::drawSystem(const System& sys, int pageIdx, qreal left, qreal top, 
                     const EventInfo& info = vi.events[k];
                     const qreal ex = mx + ms.xAt(ms.indexOf(info.onset), sys.stretch) + (info.shiftRight ? 1.1 * headW : 0);
                     drawEvent(pg, evs[k], info, ex, st, info.beamGroup >= 0);
+                    drawMarks(pg, evs[k], info, ex, st);
                     handleTies(pageIdx, s, v, evs[k], info, ex, st, left + sys.headerW, xEnd);
                     xs.push_back(ex);
                 }
@@ -913,6 +993,7 @@ Layout Builder::run()
                     if (le[k].pos.empty()) continue;
                     const bool stem = lower.voice(v)[k].durLog >= 1 && !le[k].stemUp;
                     bottom = std::min(bottom, le[k].pos.front() - (stem ? 7 : 1));
+                    if (lower.voice(v)[k].dynamic) bottom = std::min(bottom, std::min(-10, le[k].pos.front() - 9));
                 }
             }
         }

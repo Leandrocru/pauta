@@ -2,6 +2,21 @@
 
 Todas as mudanças de cada versão. A mais recente fica em cima.
 
+## [0.8.0] — 2026-11-12
+
+### ✨ Novidades
+- **Articulações:** staccato, acento, tenuto, marcato, staccatissimo e fermata.
+  - Ficam do lado da cabeça da nota, nunca sobre as linhas da pauta.
+  - O marcato e a fermata vão sempre acima.
+- **Dinâmicas:** *ppp* a *fff*, *sfz*, *sf* e *fp*, abaixo da pauta.
+- **Ferramentas Articulação e Expressão** (paleta principal): escolha o sinal na nova paleta **Articulações e dinâmicas** e clique nas notas. Clicar de novo remove.
+- **Paleta Articulações e dinâmicas:** fora dessas ferramentas, o clique aplica na nota do cursor ou em todos os compassos selecionados.
+- **Reprodução expressiva:**
+  - a dinâmica controla o volume;
+  - acento e marcato tocam mais forte;
+  - staccato soa curto e tenuto sustenta.
+- **MusicXML:** articulações, fermatas e dinâmicas passam a ser importadas.
+
 ## [0.7.1] — 2026-11-12
 
 ### 🔧 Melhorias

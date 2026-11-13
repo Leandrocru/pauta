@@ -35,7 +35,8 @@ Cada etapa termina com um programa utilizável.
 ## Etapa 3 — Gravação completa
 - [ ] Mudança de fórmula, armadura e clave no meio da partitura
 - [x] Várias vozes por pauta: 4 camadas como no Finale (Alt+1–4), hastes por camada, notas deslocadas em uníssono/segunda, acidentes compartilhados
-- [ ] Ligaduras de expressão, dinâmicas, articulações
+- [x] Dinâmicas e articulações (ferramentas Expressão e Articulação, paleta, reprodução)
+- [ ] Ligaduras de expressão e crescendo/diminuendo (Smart Shapes)
 - [ ] Chaves e colchetes de grupo, abreviações de instrumento
 - [ ] Layout incremental (re-gravar só o sistema afetado)
 

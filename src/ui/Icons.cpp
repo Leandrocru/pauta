@@ -24,7 +24,8 @@ void drawGlyphFit(QPainter& p, char16_t cp, const QRectF& target, const QColor& 
     const qreal sp = 10;
     const QRectF bb = font.bbox(cp, sp);
     if (bb.isEmpty()) return;
-    const qreal k = std::min(target.width() / bb.width(), target.height() / bb.height());
+    // Fit the box, but do not blow up tiny symbols (a staccato dot must stay a dot).
+    const qreal k = std::min({ target.width() / bb.width(), target.height() / bb.height(), 2.2 });
     p.save();
     p.translate(target.center());
     p.scale(k, k);
@@ -57,6 +58,42 @@ void staffLines(QPainter& p, qreal x0, qreal x1, qreal top, qreal gap, int n = 5
 QIcon finish(QPixmap& pm) { return QIcon(pm); }
 
 } // namespace
+
+QIcon dynamic(const QString& text)
+{
+    const auto& font = smufl::Font::instance();
+    static const QString letters = QStringLiteral("pmfrsz");
+    static const char16_t cps[6] = { 0xE520, 0xE521, 0xE522, 0xE523, 0xE524, 0xE525 };
+    const qreal sp = 7;
+    QList<quint32> idx;
+    QList<QPointF> pos;
+    qreal x = 0;
+    QRectF bounds;
+    for (QChar c : text) {
+        const int i = letters.indexOf(c);
+        if (i < 0) continue;
+        idx << font.glyphIndex(cps[i]);
+        pos << QPointF(x, 0);
+        bounds = bounds.united(font.bbox(cps[i], sp).translated(x, 0));
+        x += font.advance(cps[i], sp) - 0.08 * sp;
+    }
+    QPixmap pm(kSize, kSize);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing);
+    const qreal k = std::min((kSize - 6) / bounds.width(), (kSize - 10) / bounds.height());
+    p.translate(kSize / 2.0, kSize / 2.0);
+    p.scale(k, k);
+    p.translate(-bounds.center());
+    QGlyphRun run;
+    run.setRawFont(font.rawFont(sp));
+    run.setGlyphIndexes(idx);
+    run.setPositions(pos);
+    p.setPen(kInk);
+    p.drawGlyphRun(QPointF(0, 0), run);
+    p.end();
+    return QIcon(pm);
+}
 
 QIcon glyph(char16_t cp)
 {

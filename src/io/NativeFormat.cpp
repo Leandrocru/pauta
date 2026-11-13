@@ -79,6 +79,13 @@ bool saveNative(const Score& score, const QString& path, QString* error)
                     w.writeStartElement(e.isRest() ? "rest" : "chord");
                     w.writeAttribute("dur", QString::number(e.durLog));
                     if (e.dots) w.writeAttribute("dots", QString::number(e.dots));
+                    if (e.articulations) {
+                        QStringList names;
+                        for (unsigned a : kArticAll)
+                            if (e.articulations & a) names << articulationKey(a);
+                        w.writeAttribute("artic", names.join(QLatin1Char(',')));
+                    }
+                    if (e.dynamic) w.writeAttribute("dyn", dynamicText(e.dynamic));
                     if (e.inTuplet()) {
                         w.writeAttribute("tuplet", QStringLiteral("%1:%2").arg(e.tupletActual).arg(e.tupletNormal));
                         if (e.tupletStart) w.writeAttribute("tupletStart", QStringLiteral("1"));
@@ -173,6 +180,10 @@ bool loadNative(Score& out, const QString& path, QString* error)
                     event->tupletNormal = qBound(0, tup[1].toInt(), 32);
                     event->tupletStart = attrInt(a, "tupletStart", 0) != 0;
                 }
+                for (const QString& name : attr(a, "artic").toString().split(QLatin1Char(','), Qt::SkipEmptyParts))
+                    for (unsigned art : kArticAll)
+                        if (articulationKey(art) == name) event->articulations |= art;
+                event->dynamic = dynamicFromText(attr(a, "dyn").toString());
             } else if (n == u"note" && event) {
                 Pitch p;
                 const QString step = attr(a, "step").toString();

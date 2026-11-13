@@ -60,7 +60,9 @@ public:
     void backspace();                // Backspace
     void alter(int delta);           // + / -
     void naturalize();               // N
-    void toggleTie();                // = or L (Finale-style: tie to the next note)
+    void toggleTie();
+    void toggleArticulation(unsigned artic); // on the selection, or the current/previous note
+    void setDynamic(int dynamic);            // 0 removes; selection: first note of each staff                // = or L (Finale-style: tie to the next note)
     void toggleDot();                // .
     void transpose(int steps);       // Shift+Up/Down on the current event
 

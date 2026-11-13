@@ -30,6 +30,8 @@ struct Event {
     int tupletActual = 0;
     int tupletNormal = 0;
     bool tupletStart = false;    // first event of a tuplet group
+    unsigned articulations = 0;  // Artic bit flags
+    int dynamic = 0;             // Dynamic value; 0 = none
 
     bool isRest() const { return pitches.empty(); }
     bool inTuplet() const { return tupletActual > 0 && tupletNormal > 0; }
@@ -37,6 +39,20 @@ struct Event {
     Frac baseDuration() const;   // written value (without the tuplet ratio)
     void sortPitches();
 };
+
+// Articulations (bit flags on an Event).
+enum Artic : unsigned {
+    ArticStaccato = 1u << 0,
+    ArticAccent = 1u << 1,
+    ArticTenuto = 1u << 2,
+    ArticMarcato = 1u << 3,
+    ArticStaccatissimo = 1u << 4,
+    ArticFermata = 1u << 5,
+};
+constexpr unsigned kArticAll[6] = { ArticStaccato, ArticAccent, ArticTenuto, ArticMarcato, ArticStaccatissimo, ArticFermata };
+
+// Dynamic marks attached to an event (shown below the staff, used for playback volume).
+enum Dynamic : int { DynNone = 0, DynPPP, DynPP, DynP, DynMP, DynMF, DynF, DynFF, DynFFF, DynSFZ, DynSF, DynFP, DynCount };
 
 constexpr int kVoices = 4; // "layers" in Finale terms
 
@@ -88,6 +104,11 @@ QString pitchName(const Pitch& p);           // e.g. "Fá♯4"
 QString durationName(int durLog);            // e.g. "Semínima"
 QString clefName(Clef clef);
 QString keyName(int fifths);
-int tupletNormalFor(int actual);             // 3 -> 2, 5 -> 4, 2 -> 3 (duplet), ...                 // e.g. "Sol maior / mi menor (1 ♯)"
+int tupletNormalFor(int actual);             // 3 -> 2, 5 -> 4, 2 -> 3 (duplet), ...
+QString dynamicText(int dynamic);            // "mf"
+int dynamicFromText(const QString& text);    // "mf" -> DynMF (0 if unknown)
+int dynamicVelocity(int dynamic);            // MIDI velocity for playback
+QString articulationName(unsigned artic);    // "Staccato"
+QString articulationKey(unsigned artic);     // "staccato" (file format)                 // e.g. "Sol maior / mi menor (1 ♯)"
 
 } // namespace pauta

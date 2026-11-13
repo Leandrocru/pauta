@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 # The icon resource (.rc) has no includes; skip cmcldeps, which breaks with some CMake/Ninja setups.
 set(CMAKE_NINJA_CMCLDEPS_RC OFF)
-project(Pauta VERSION 0.7.1 LANGUAGES CXX)
+project(Pauta VERSION 0.8.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
