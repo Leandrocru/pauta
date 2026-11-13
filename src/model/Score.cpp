@@ -113,6 +113,64 @@ void Score::appendMeasure()
         s.measures.emplace_back();
 }
 
+TimeSig Score::timeAt(int measure) const
+{
+    TimeSig t = time;
+    for (const auto& [m, ts] : timeChanges) {
+        if (m > measure) break;
+        t = ts;
+    }
+    return t;
+}
+
+int Score::keyAt(int measure) const
+{
+    int k = keyFifths;
+    for (const auto& [m, f] : keyChanges) {
+        if (m > measure) break;
+        k = f;
+    }
+    return k;
+}
+
+namespace {
+// Shifts the keys of a change map: those >= at move by `delta`; those in [dropFrom, dropTo] go away.
+template <typename T>
+void shiftChanges(std::map<int, T>& changes, int at, int delta, int dropFrom = 1, int dropTo = 0)
+{
+    std::map<int, T> out;
+    for (const auto& [m, v] : changes) {
+        if (m >= dropFrom && m <= dropTo) continue;
+        const int nm = m >= at ? m + delta : m;
+        if (nm > 0) out[nm] = v;
+    }
+    changes.swap(out);
+}
+} // namespace
+
+void Score::insertMeasures(int at, int n)
+{
+    if (n <= 0) return;
+    for (Staff& s : staves) {
+        s.measures.insert(s.measures.begin() + std::clamp(at, 0, int(s.measures.size())), size_t(n), Measure{});
+        shiftChanges(s.clefChanges, at, n);
+    }
+    shiftChanges(timeChanges, at, n);
+    shiftChanges(keyChanges, at, n);
+}
+
+void Score::removeMeasures(int first, int last)
+{
+    if (last < first) return;
+    const int count = last - first + 1;
+    for (Staff& s : staves) {
+        s.measures.erase(s.measures.begin() + first, s.measures.begin() + last + 1);
+        shiftChanges(s.clefChanges, last + 1, -count, first, last);
+    }
+    shiftChanges(timeChanges, last + 1, -count, first, last);
+    shiftChanges(keyChanges, last + 1, -count, first, last);
+}
+
 void Score::setMeasureCount(int n)
 {
     for (Staff& s : staves)

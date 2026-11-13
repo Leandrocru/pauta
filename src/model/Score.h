@@ -5,6 +5,7 @@
 #include <QString>
 #include <algorithm>
 #include <array>
+#include <map>
 #include <vector>
 
 namespace pauta {
@@ -77,25 +78,50 @@ struct Measure {
 
 struct Staff {
     QString name;
-    Clef clef = Clef::Treble;
+    Clef clef = Clef::Treble;          // clef at the start of the piece
+    std::map<int, Clef> clefChanges;   // measure index (> 0) -> clef from that measure on
     std::vector<Measure> measures;
+
+    Clef clefAt(int measure) const
+    {
+        Clef c = clef;
+        for (const auto& [m, cl] : clefChanges) {
+            if (m > measure) break;
+            c = cl;
+        }
+        return c;
+    }
 };
 
 struct TimeSig {
     int beats = 4;
     int beatType = 4;
     Frac capacity() const { return Frac(beats, beatType); }
+    bool operator==(const TimeSig&) const = default;
 };
 
 struct Score {
     QString title;
     QString composer;
-    TimeSig time;
-    int keyFifths = 0; // -7..+7
+    TimeSig time;      // at the start of the piece
+    int keyFifths = 0; // -7..+7, at the start of the piece
+    // Changes in the middle of the piece: measure index (> 0) -> new value from that measure on.
+    std::map<int, TimeSig> timeChanges;
+    std::map<int, int> keyChanges;
     int tempo = 96;    // quarter notes per minute (playback)
     std::vector<Staff> staves;
 
     int measureCount() const { return staves.empty() ? 0 : int(staves.front().measures.size()); }
+    TimeSig timeAt(int measure) const;
+    int keyAt(int measure) const;
+    Frac capacityAt(int measure) const { return timeAt(measure).capacity(); }
+    Clef clefAt(int staff, int measure) const { return staves[size_t(staff)].clefAt(measure); }
+    bool timeChangesAt(int measure) const { return measure > 0 && timeChanges.count(measure); }
+    bool keyChangesAt(int measure) const { return measure > 0 && keyChanges.count(measure); }
+    bool clefChangesAt(int staff, int measure) const { return measure > 0 && staves[size_t(staff)].clefChanges.count(measure); }
+    // Measure insertion/removal in every staff, keeping the changes on the right measures.
+    void insertMeasures(int at, int n);
+    void removeMeasures(int first, int last); // inclusive
     void appendMeasure();
     void setMeasureCount(int n);
 

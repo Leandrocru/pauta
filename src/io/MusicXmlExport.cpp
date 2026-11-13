@@ -66,6 +66,7 @@ int64_t divisionsFor(const Score& s)
         div = std::lcm(div, q.den);
     };
     need(s.time.capacity());
+    for (const auto& [m, t] : s.timeChanges) need(t.capacity());
     for (const Staff& st : s.staves)
         for (const Measure& m : st.measures)
             for (int v = 0; v < kVoices; ++v)
@@ -180,6 +181,28 @@ void Writer::writePart(const Part& p, int partIndex)
     for (int m = 0; m < m_s.measureCount(); ++m) {
         m_w.writeStartElement("measure");
         m_w.writeAttribute("number", QString::number(m + 1));
+        if (m > 0) {
+            // Changes in the middle of the piece.
+            bool clefChange = false;
+            for (int k = 0; k < p.staffCount; ++k) clefChange |= m_s.clefChangesAt(p.firstStaff + k, m);
+            if (m_s.keyChangesAt(m) || m_s.timeChangesAt(m) || clefChange) {
+                m_w.writeStartElement("attributes");
+                if (m_s.keyChangesAt(m)) {
+                    m_w.writeStartElement("key");
+                    m_w.writeTextElement("fifths", QString::number(m_s.keyAt(m)));
+                    m_w.writeEndElement();
+                }
+                if (m_s.timeChangesAt(m)) {
+                    m_w.writeStartElement("time");
+                    m_w.writeTextElement("beats", QString::number(m_s.timeAt(m).beats));
+                    m_w.writeTextElement("beat-type", QString::number(m_s.timeAt(m).beatType));
+                    m_w.writeEndElement();
+                }
+                for (int k = 0; k < p.staffCount; ++k)
+                    if (m_s.clefChangesAt(p.firstStaff + k, m)) clefElement(m_w, m_s.clefAt(p.firstStaff + k, m), k + 1);
+                m_w.writeEndElement();
+            }
+        }
         if (m == 0) {
             m_w.writeStartElement("attributes");
             m_w.writeTextElement("divisions", QString::number(m_div));
@@ -249,7 +272,7 @@ void Writer::writeLayer(const Part& p, int staffInPart, int voice, int m, int64_
         m_w.writeStartElement("note");
         m_w.writeEmptyElement("rest");
         m_w.writeAttribute("measure", "yes");
-        const int64_t d = dur(m_s.time.capacity());
+        const int64_t d = dur(m_s.capacityAt(m));
         m_w.writeTextElement("duration", QString::number(d));
         m_w.writeTextElement("voice", voiceNo);
         if (p.staffCount > 1) m_w.writeTextElement("staff", staffNo);
@@ -259,7 +282,7 @@ void Writer::writeLayer(const Part& p, int staffInPart, int voice, int m, int64_
         return;
     }
 
-    const std::vector<int> beams = beamGroups(evs, m_s.time);
+    const std::vector<int> beams = beamGroups(evs, m_s.timeAt(m));
     auto& tiedFrom = m_tiedFrom[{ staffIdx, voice }];
     for (size_t i = 0; i < evs.size(); ++i) {
         const Event& e = evs[i];

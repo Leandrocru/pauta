@@ -76,6 +76,7 @@ struct MeasureSpacing {
     std::vector<qreal> fixedAt;   // fixed space before onset i
     std::vector<qreal> stretchAt; // stretchable space before onset i
     qreal fixedTotal = 0;
+    qreal prefix = 0; // room for clef/key/time changes when the measure is not at a system start
     qreal stretchTotal = 0;
     std::vector<StaffInfo> staves;
 
@@ -88,7 +89,7 @@ struct MeasureSpacing {
     }
 };
 
-void analyseEvents(const Score& score, const Staff& staff, const Measure& m, StaffInfo& out)
+void analyseEvents(const Score& score, int mi, const Staff& staff, const Measure& m, StaffInfo& out)
 {
     out.multi = m.usedVoices() > 1;
 
@@ -105,7 +106,7 @@ void analyseEvents(const Score& score, const Staff& staff, const Measure& m, Sta
             info.acc.assign(n, kNoAcc);
             info.accCol.assign(n, 0);
             info.offset.assign(n, false);
-            for (size_t k = 0; k < n; ++k) info.pos[k] = staffPosition(e.pitches[k].diatonic(), staff.clef);
+            for (size_t k = 0; k < n; ++k) info.pos[k] = staffPosition(e.pitches[k].diatonic(), staff.clefAt(mi));
             if (out.multi) info.stemUp = v % 2 == 0; // layers 1/3 up, 2/4 down
             else if (n > 0) info.stemUp = info.pos.front() + info.pos.back() < 0;
             const int base = e.durLog <= 0 ? 2 : 0;   // whole rest hangs from line 4
@@ -128,7 +129,7 @@ void analyseEvents(const Score& score, const Staff& staff, const Measure& m, Sta
         for (size_t k = 0; k < e.pitches.size(); ++k) {
             const Pitch& p = e.pitches[k];
             auto it = state.find(p.diatonic());
-            const int current = it != state.end() ? it->second : keyAlterFor(p.step, score.keyFifths);
+            const int current = it != state.end() ? it->second : keyAlterFor(p.step, score.keyAt(mi));
             if (p.alter != current) info.acc[k] = p.alter;
             state[p.diatonic()] = p.alter;
         }
@@ -136,7 +137,7 @@ void analyseEvents(const Score& score, const Staff& staff, const Measure& m, Sta
 
     // 3) Beam groups per layer: consecutive eighth-or-shorter notes inside one beaming unit;
     //    rests, longer notes and unit boundaries break the beam.
-    const Frac unit = beamUnit(score.time);
+    const Frac unit = beamUnit(score.timeAt(mi));
     for (int v = 0; v < kVoices; ++v) {
         StaffMeasureInfo& vi = out.v[size_t(v)];
         const std::vector<Event>& evs = m.voice(v);
@@ -224,13 +225,13 @@ void analyseEvents(const Score& score, const Staff& staff, const Measure& m, Sta
 MeasureSpacing computeSpacing(const Score& score, int mi, qreal sp, qreal headW)
 {
     MeasureSpacing ms;
-    const Frac capacity = score.time.capacity();
+    const Frac capacity = score.capacityAt(mi);
     std::set<Frac> onsetSet{ Frac(0) };
     Frac end = capacity;
     ms.staves.resize(score.staves.size());
     for (size_t s = 0; s < score.staves.size(); ++s) {
         const Staff& st = score.staves[s];
-        analyseEvents(score, st, st.measures[size_t(mi)], ms.staves[s]);
+        analyseEvents(score, mi, st, st.measures[size_t(mi)], ms.staves[s]);
         for (const StaffMeasureInfo& vi : ms.staves[s].v) {
             for (const EventInfo& e : vi.events) onsetSet.insert(e.onset);
             onsetSet.insert(vi.filled);
@@ -339,9 +340,16 @@ private:
         bool showTime = false;
     };
 
-    qreal headerWidth(bool showTime) const;
+    qreal headerWidth(int measure, bool showTime) const;
+    qreal clefColumnWidth(int measure) const;
+    qreal keyWidth(int fifths, int previous) const;
+    qreal timeWidth(const TimeSig& t) const;
+    qreal drawKey(PageLayout& pg, qreal x, qreal staffTop, Clef clef, int fifths, int previous);
+    qreal drawTime(PageLayout& pg, qreal x, qreal staffTop, const TimeSig& t);
+    qreal changePrefix(int measure) const;
+    void drawChanges(PageLayout& pg, int staff, int measure, qreal x, qreal staffTop);
     void drawSystem(const System& sys, int page, qreal left, qreal top, bool firstSystem);
-    void drawHeader(PageLayout& pg, int staff, qreal x, qreal staffTop, bool showTime);
+    void drawHeader(PageLayout& pg, int staff, qreal x, qreal staffTop, int measure, bool showTime);
     void drawEvent(PageLayout& pg, const Event& e, const EventInfo& info, qreal x, qreal staffTop, bool beamed);
     void drawBeamGroup(PageLayout& pg, const std::vector<Event>& evs, const StaffMeasureInfo& smi, const std::vector<int>& group,
                        const std::vector<qreal>& xs, qreal staffTop);
@@ -416,67 +424,127 @@ private:
     Layout m_layout;
 };
 
-qreal Builder::headerWidth(bool showTime) const
+qreal Builder::clefColumnWidth(int measure) const
 {
-    qreal clefW = 0;
-    for (const Staff& st : m_score.staves) clefW = std::max(clefW, m_font.advance(clefGlyph(st.clef), m_sp));
-    qreal w = 0.7 * m_sp + clefW + 0.8 * m_sp;
-    const int nAcc = std::abs(m_score.keyFifths);
-    if (nAcc > 0) {
-        const char16_t acc = m_score.keyFifths > 0 ? smufl::AccSharp : smufl::AccFlat;
-        w += nAcc * (m_font.advance(acc, m_sp) + 0.1 * m_sp) + 0.6 * m_sp;
-    }
-    if (showTime) {
-        const QString top = QString::number(m_score.time.beats);
-        const QString bot = QString::number(m_score.time.beatType);
-        auto numW = [&](const QString& s) {
-            qreal t = 0;
-            for (QChar c : s) t += m_font.advance(char16_t(smufl::TimeSig0 + (c.unicode() - '0')), m_sp);
-            return t;
-        };
-        w += std::max(numW(top), numW(bot)) + 1.0 * m_sp;
-    }
+    qreal w = 0;
+    for (int st = 0; st < int(m_score.staves.size()); ++st)
+        w = std::max(w, m_font.advance(clefGlyph(m_score.clefAt(st, measure)), m_sp));
     return w;
 }
 
-void Builder::drawHeader(PageLayout& pg, int staffIdx, qreal x, qreal staffTop, bool showTime)
+// Width of a key signature; `previous` != fifths adds the naturals that cancel the old key.
+qreal Builder::keyWidth(int fifths, int previous) const
 {
-    const Staff& st = m_score.staves[size_t(staffIdx)];
-    x += 0.7 * m_sp;
-    glyph(pg, clefGlyph(st.clef), x, y(staffTop, clefPos(st.clef)));
-    qreal clefW = 0;
-    for (const Staff& s2 : m_score.staves) clefW = std::max(clefW, m_font.advance(clefGlyph(s2.clef), m_sp));
-    x += clefW + 0.8 * m_sp;
+    int naturals = 0;
+    if (previous != fifths && previous != 0) {
+        if (fifths == 0 || (fifths > 0) != (previous > 0)) naturals = std::abs(previous);
+        else if (std::abs(fifths) < std::abs(previous)) naturals = std::abs(previous) - std::abs(fifths);
+    }
+    auto step = [&](char16_t g) { return m_font.advance(g, m_sp) + 0.1 * m_sp; };
+    const qreal w = naturals * step(smufl::AccNatural) + std::abs(fifths) * step(fifths > 0 ? smufl::AccSharp : smufl::AccFlat);
+    return naturals + std::abs(fifths) > 0 ? w + 0.6 * m_sp : 0;
+}
 
-    const int nAcc = std::abs(m_score.keyFifths);
-    const bool sharps = m_score.keyFifths > 0;
+qreal Builder::timeWidth(const TimeSig& t) const
+{
+    auto numW = [&](const QString& str) {
+        qreal w = 0;
+        for (QChar c : str) w += m_font.advance(char16_t(smufl::TimeSig0 + (c.unicode() - '0')), m_sp);
+        return w;
+    };
+    return std::max(numW(QString::number(t.beats)), numW(QString::number(t.beatType))) + 1.0 * m_sp;
+}
+
+qreal Builder::headerWidth(int measure, bool showTime) const
+{
+    qreal w = 0.7 * m_sp + clefColumnWidth(measure) + 0.8 * m_sp;
+    w += keyWidth(m_score.keyAt(measure), m_score.keyAt(measure));
+    if (showTime) w += timeWidth(m_score.timeAt(measure));
+    return w;
+}
+
+qreal Builder::drawKey(PageLayout& pg, qreal x, qreal staffTop, Clef clef, int fifths, int previous)
+{
+    auto step = [&](char16_t g) { return m_font.advance(g, m_sp) + 0.1 * m_sp; };
+    // Naturals for the accidentals of the old key that are no longer there.
+    if (previous != fifths && previous != 0) {
+        const bool prevSharps = previous > 0;
+        int from = 0;
+        if (fifths != 0 && (fifths > 0) == prevSharps) from = std::abs(fifths);
+        for (int i = from; i < std::abs(previous); ++i) {
+            glyph(pg, smufl::AccNatural, x, y(staffTop, keySigPos(i, prevSharps, clef)));
+            x += step(smufl::AccNatural);
+        }
+    }
+    const bool sharps = fifths > 0;
     const char16_t acc = sharps ? smufl::AccSharp : smufl::AccFlat;
-    for (int i = 0; i < nAcc; ++i) {
-        glyph(pg, acc, x, y(staffTop, keySigPos(i, sharps, st.clef)));
-        x += m_font.advance(acc, m_sp) + 0.1 * m_sp;
+    for (int i = 0; i < std::abs(fifths); ++i) {
+        glyph(pg, acc, x, y(staffTop, keySigPos(i, sharps, clef)));
+        x += step(acc);
     }
-    if (nAcc > 0) x += 0.6 * m_sp;
+    return x;
+}
 
-    if (showTime) {
-        auto digitsW = [&](const QString& s) {
-            qreal t = 0;
-            for (QChar c : s) t += m_font.advance(char16_t(smufl::TimeSig0 + (c.unicode() - '0')), m_sp);
-            return t;
-        };
-        const QString top = QString::number(m_score.time.beats);
-        const QString bot = QString::number(m_score.time.beatType);
-        const qreal w = std::max(digitsW(top), digitsW(bot));
-        auto drawNum = [&](const QString& s, int pos) {
-            qreal xx = x + (w - digitsW(s)) / 2;
-            for (QChar c : s) {
-                const char16_t cp = char16_t(smufl::TimeSig0 + (c.unicode() - '0'));
-                glyph(pg, cp, xx, y(staffTop, pos));
-                xx += m_font.advance(cp, m_sp);
-            }
-        };
-        drawNum(top, 2);
-        drawNum(bot, -2);
+qreal Builder::drawTime(PageLayout& pg, qreal x, qreal staffTop, const TimeSig& t)
+{
+    auto digitsW = [&](const QString& str) {
+        qreal w = 0;
+        for (QChar c : str) w += m_font.advance(char16_t(smufl::TimeSig0 + (c.unicode() - '0')), m_sp);
+        return w;
+    };
+    const QString top = QString::number(t.beats);
+    const QString bot = QString::number(t.beatType);
+    const qreal w = std::max(digitsW(top), digitsW(bot));
+    auto drawNum = [&](const QString& str, int pos) {
+        qreal xx = x + (w - digitsW(str)) / 2;
+        for (QChar c : str) {
+            const char16_t cp = char16_t(smufl::TimeSig0 + (c.unicode() - '0'));
+            glyph(pg, cp, xx, y(staffTop, pos));
+            xx += m_font.advance(cp, m_sp);
+        }
+    };
+    drawNum(top, 2);
+    drawNum(bot, -2);
+    return x + w + 1.0 * m_sp;
+}
+
+void Builder::drawHeader(PageLayout& pg, int staffIdx, qreal x, qreal staffTop, int measure, bool showTime)
+{
+    const Clef clef = m_score.clefAt(staffIdx, measure);
+    x += 0.7 * m_sp;
+    glyph(pg, clefGlyph(clef), x, y(staffTop, clefPos(clef)));
+    x += clefColumnWidth(measure) + 0.8 * m_sp;
+    const int key = m_score.keyAt(measure);
+    x = drawKey(pg, x, staffTop, clef, key, key);
+    if (key != 0) x += 0.6 * m_sp;
+    if (showTime) drawTime(pg, x, staffTop, m_score.timeAt(measure));
+}
+
+// Room taken by changes at the start of a measure that is not the first of its system.
+qreal Builder::changePrefix(int measure) const
+{
+    if (measure <= 0) return 0;
+    qreal w = 0;
+    bool clef = false;
+    for (int st = 0; st < int(m_score.staves.size()); ++st) clef |= m_score.clefChangesAt(st, measure);
+    if (clef) w += clefColumnWidth(measure) + 0.6 * m_sp;
+    if (m_score.keyChangesAt(measure)) w += keyWidth(m_score.keyAt(measure), m_score.keyAt(measure - 1)) + 0.2 * m_sp;
+    if (m_score.timeChangesAt(measure)) w += timeWidth(m_score.timeAt(measure));
+    return w > 0 ? w + 0.4 * m_sp : 0;
+}
+
+void Builder::drawChanges(PageLayout& pg, int staffIdx, int measure, qreal x, qreal staffTop)
+{
+    x += 0.6 * m_sp;
+    bool anyClef = false;
+    for (int st = 0; st < int(m_score.staves.size()); ++st) anyClef |= m_score.clefChangesAt(st, measure);
+    const Clef clef = m_score.clefAt(staffIdx, measure);
+    if (anyClef) {
+        if (m_score.clefChangesAt(staffIdx, measure)) glyph(pg, clefGlyph(clef), x, y(staffTop, clefPos(clef)));
+        x += clefColumnWidth(measure) + 0.6 * m_sp;
     }
+    if (m_score.keyChangesAt(measure)) x = drawKey(pg, x, staffTop, clef, m_score.keyAt(measure), m_score.keyAt(measure - 1)) + 0.8 * m_sp;
+    if (m_score.timeChangesAt(measure)) drawTime(pg, x, staffTop, m_score.timeAt(measure));
 }
 
 void Builder::drawMeasureRest(PageLayout& pg, qreal x0, qreal x1, qreal staffTop)
@@ -974,7 +1042,8 @@ void Builder::drawSystem(const System& sys, int pageIdx, qreal left, qreal top, 
     PageLayout& pg = page(pageIdx);
     const int nStaves = int(m_score.staves.size());
     qreal xEnd = left + sys.headerW;
-    for (int m = sys.first; m <= sys.last; ++m) xEnd += m_spacing[size_t(m)].width(sys.stretch);
+    for (int m = sys.first; m <= sys.last; ++m)
+        xEnd += m_spacing[size_t(m)].width(sys.stretch) + (m > sys.first ? m_spacing[size_t(m)].prefix : 0);
 
     const qreal sysTop = top;
     const qreal sysBottom = top + systemHeight();
@@ -982,7 +1051,7 @@ void Builder::drawSystem(const System& sys, int pageIdx, qreal left, qreal top, 
     for (int s = 0; s < nStaves; ++s) {
         const qreal st = top + s * staffDist();
         for (int l = 0; l < 5; ++l) line(pg, left, st + l * m_sp, xEnd, st + l * m_sp, kStaffLineW);
-        drawHeader(pg, s, left, st, sys.showTime);
+        drawHeader(pg, s, left, st, sys.first, sys.showTime);
 
         if (firstSystem && !m_score.staves[size_t(s)].name.isEmpty()) {
             TextItem t;
@@ -1009,7 +1078,8 @@ void Builder::drawSystem(const System& sys, int pageIdx, qreal left, qreal top, 
     qreal mx = left + sys.headerW;
     for (int m = sys.first; m <= sys.last; ++m) {
         const MeasureSpacing& ms = m_spacing[size_t(m)];
-        const qreal w = ms.width(sys.stretch);
+        const qreal pre = m > sys.first ? ms.prefix : 0; // clef/key/time change drawn at the measure start
+        const qreal w = ms.width(sys.stretch) + pre;
         for (int s = 0; s < nStaves; ++s) {
             const qreal st = top + s * staffDist();
             const Measure& meas = m_score.staves[size_t(s)].measures[size_t(m)];
@@ -1021,9 +1091,10 @@ void Builder::drawSystem(const System& sys, int pageIdx, qreal left, qreal top, 
             slot.x0 = mx;
             slot.x1 = mx + w;
             slot.staffTop = st;
-            slot.clef = m_score.staves[size_t(s)].clef;
+            slot.clef = m_score.clefAt(s, m);
+            if (pre > 0) drawChanges(pg, s, m, mx, st);
             if (meas.isEmpty()) {
-                drawMeasureRest(pg, mx, mx + w, st);
+                drawMeasureRest(pg, mx + pre, mx + w, st);
                 for (int v = 0; v < kVoices; ++v) m_pendingTies[size_t(s * kVoices + v)].clear();
             }
             const qreal headW = m_font.advance(smufl::NoteheadBlack, m_sp);
@@ -1033,7 +1104,7 @@ void Builder::drawSystem(const System& sys, int pageIdx, qreal left, qreal top, 
                 std::vector<qreal>& xs = slot.eventX[size_t(v)];
                 for (size_t k = 0; k < evs.size(); ++k) {
                     const EventInfo& info = vi.events[k];
-                    const qreal ex = mx + ms.xAt(ms.indexOf(info.onset), sys.stretch) + (info.shiftRight ? 1.1 * headW : 0);
+                    const qreal ex = mx + pre + ms.xAt(ms.indexOf(info.onset), sys.stretch) + (info.shiftRight ? 1.1 * headW : 0);
                     drawEvent(pg, evs[k], info, ex, st, info.beamGroup >= 0);
                     drawMarks(pg, evs[k], info, ex, st);
                     handleTies(pageIdx, s, v, evs[k], info, ex, st, left + sys.headerW, xEnd);
@@ -1044,8 +1115,8 @@ void Builder::drawSystem(const System& sys, int pageIdx, qreal left, qreal top, 
                 drawTuplets(pg, evs, vi, xs, st);
                 if (evs.empty()) m_pendingTies[size_t(s * kVoices + v)].clear();
                 const size_t ai = ms.indexOf(vi.filled);
-                slot.appendX[size_t(v)] = ai + 1 < ms.onsets.size() || vi.filled < m_score.time.capacity()
-                                              ? mx + ms.xAt(ai, sys.stretch)
+                slot.appendX[size_t(v)] = ai + 1 < ms.onsets.size() || vi.filled < m_score.capacityAt(m)
+                                              ? mx + pre + ms.xAt(ai, sys.stretch)
                                               : mx + w - 1.6 * m_sp;
             }
             m_layout.measureSlots.push_back(std::move(slot));
@@ -1071,7 +1142,10 @@ Layout Builder::run()
         return m_layout;
     }
     m_spacing.reserve(size_t(nMeasures));
-    for (int m = 0; m < nMeasures; ++m) m_spacing.push_back(computeSpacing(m_score, m, m_sp, m_headW));
+    for (int m = 0; m < nMeasures; ++m) {
+        m_spacing.push_back(computeSpacing(m_score, m, m_sp, m_headW));
+        m_spacing.back().prefix = changePrefix(m);
+    }
 
     // Scroll view: one endless system on a single strip, no title, natural spacing.
     if (m_opt.continuous) {
@@ -1083,9 +1157,9 @@ Layout Builder::run()
         sys.first = 0;
         sys.last = nMeasures - 1;
         sys.showTime = true;
-        sys.headerW = headerWidth(true);
+        sys.headerW = headerWidth(0, true);
         qreal width = sys.headerW;
-        for (const MeasureSpacing& ms : m_spacing) width += ms.width(1.0);
+        for (int mm = 0; mm < nMeasures; ++mm) width += m_spacing[size_t(mm)].width(1.0) + m_spacing[size_t(mm)].prefix;
         m_layout.pageWidth = 2 * margin + indent + width;
         m_layout.pageHeight = 2 * margin + 8 * m_sp + systemHeight();
         m_opt.pageHeight = m_layout.pageHeight;
@@ -1119,14 +1193,15 @@ Layout Builder::run()
     while (m < nMeasures) {
         System sys;
         sys.first = m;
-        sys.showTime = systems.empty();
-        sys.headerW = headerWidth(sys.showTime);
+        sys.showTime = systems.empty() || m_score.timeChangesAt(m);
+        sys.headerW = headerWidth(m, sys.showTime);
         const qreal avail = fullWidth - (systems.empty() ? indent : 0) - sys.headerW;
         qreal fixed = 0, stretch = 0;
         while (m < nMeasures) {
             const MeasureSpacing& ms = m_spacing[size_t(m)];
-            if (m > sys.first && fixed + stretch + ms.fixedTotal + ms.stretchTotal > avail) break;
-            fixed += ms.fixedTotal;
+            const qreal pre = m > sys.first ? ms.prefix : 0;
+            if (m > sys.first && fixed + stretch + ms.fixedTotal + pre + ms.stretchTotal > avail) break;
+            fixed += ms.fixedTotal + pre;
             stretch += ms.stretchTotal;
             ++m;
         }

@@ -53,8 +53,9 @@ private:
     void documentSetup();
     void showShortcuts();
     void onToolClicked(Tool tool, int staff, int measure);
-    void chooseKey();
-    void chooseTime();
+    void chooseKey(int fromMeasure = -1);  // -1: ask, starting at the cursor measure
+    void chooseTime(int fromMeasure = -1);
+    void chooseClef(int staff, int fromMeasure);
     void editStaff(int staff);
     void addStaffDialog();
     void addMeasuresDialog();

@@ -91,9 +91,9 @@ public:
     void clearSelectionContents(); // Backspace/Delete on a selected region
 
     // Document-level changes (all undoable)
-    void setKeySignature(int fifths);
-    void setTimeSignature(TimeSig t);
-    void setClef(int staff, Clef clef);
+    void setKeySignature(int fifths, int fromMeasure = 0);
+    void setTimeSignature(TimeSig t, int fromMeasure = 0); // rebars until the next time change
+    void setClef(int staff, Clef clef, int fromMeasure = 0);
     void setStaffName(int staff, const QString& name);
     void addStaff(int index, const QString& name, Clef clef);
     void removeStaff(int staff);

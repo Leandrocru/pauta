@@ -12,7 +12,7 @@ Interface e mensagens em **português do Brasil**. Comentários no código em in
 - Roteiro em `docs/ROADMAP.md` (marque o que concluir). Formato `.pauta` em `docs/FORMATO.md`.
 
 ## Arquitetura (`src/`)
-- `model/` — `Score → Staff → Measure → Event(pitches|rest)`; `Measure` tem 4 camadas (`events` = camada 1, `voice(v)` acessa qualquer uma); utilitários de altura/clave/armadura.
+- `model/` — `Score → Staff → Measure → Event(pitches|rest)`; fórmula/tonalidade/clave do início + mapas de mudanças por compasso (`timeAt`, `keyAt`, `clefAt`, `capacityAt` — use sempre estes, nunca `time`/`keyFifths`/`clef` direto); inserir/remover compassos com `Score::insertMeasures/removeMeasures`; `Measure` tem 4 camadas (`events` = camada 1, `voice(v)` acessa qualquer uma); utilitários de altura/clave/armadura.
 - `render/Engraver` — função pura `Score → Layout` (espaçamento, sistemas, páginas, primitivas por página).
 - `render/Renderer` — pinta um `PageLayout` (glifos em um único `QGlyphRun`), exporta PDF/PNG.
 - `edit/Editor` — cursor, entrada estilo Speedy Entry, desfazer por snapshot (`QUndoStack`).

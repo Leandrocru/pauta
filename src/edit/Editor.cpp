@@ -46,7 +46,7 @@ void Editor::setScore(Score s)
     m_undo.clear();
     m_sel = Selection{};
     m_cursor = Cursor{};
-    m_cursor.diatonic = clefMiddleLine(m_score.staves.empty() ? Clef::Treble : m_score.staves.front().clef);
+    m_cursor.diatonic = clefMiddleLine(m_score.staves.empty() ? Clef::Treble : m_score.staves.front().clefAt(0));
     emit scoreChanged();
     emit cursorChanged();
 }
@@ -125,14 +125,14 @@ Event* Editor::targetEvent()
 Pitch Editor::cursorPitch() const
 {
     Pitch p = Pitch::fromDiatonic(m_cursor.diatonic);
-    p.alter = keyAlterFor(p.step, m_score.keyFifths);
+    p.alter = keyAlterFor(p.step, m_score.keyAt(m_cursor.measure));
     return p;
 }
 
 void Editor::advanceIfFull()
 {
     const Measure& m = measure();
-    if (m_cursor.index == int(m.voice(m_cursor.voice).size()) && m.filled(m_cursor.voice) >= m_score.time.capacity()) {
+    if (m_cursor.index == int(m.voice(m_cursor.voice).size()) && m.filled(m_cursor.voice) >= m_score.capacityAt(m_cursor.measure)) {
         if (m_cursor.measure == m_score.measureCount() - 1) m_score.appendMeasure();
         ++m_cursor.measure;
         m_cursor.index = 0;
@@ -165,7 +165,7 @@ bool Editor::insertEvent(Event e)
         m_tupRemaining = savedRemaining;
     };
 
-    const Frac cap = m_score.time.capacity();
+    const Frac cap = m_score.capacityAt(m_cursor.measure);
     if (measure().filled(m_cursor.voice) + e.duration() > cap) {
         // A full measure with the cursor at its end: continue in the next one.
         if (m_cursor.index == int(evs().size()) && measure().filled(m_cursor.voice) >= cap) {
@@ -195,7 +195,7 @@ void Editor::enterDuration(int durLog)
             Event changed = *e;
             changed.durLog = durLog;
             const Frac newDur = changed.duration();
-            if (measure().filled(m_cursor.voice) - e->duration() + newDur > m_score.time.capacity()) {
+            if (measure().filled(m_cursor.voice) - e->duration() + newDur > m_score.capacityAt(m_cursor.measure)) {
                 emit message(tooLong());
                 return false;
             }
@@ -254,7 +254,7 @@ void Editor::changeDurationInPlace(int durLog)
         Event* e = currentEventMut();
         Event changed = *e;
         changed.durLog = durLog;
-        if (measure().filled(m_cursor.voice) - e->duration() + changed.duration() > m_score.time.capacity()) {
+        if (measure().filled(m_cursor.voice) - e->duration() + changed.duration() > m_score.capacityAt(m_cursor.measure)) {
             emit message(tooLong());
             return false;
         }
@@ -525,12 +525,13 @@ void Editor::toggleDot()
         if (!e) return false;
         const int newDots = e->dots ? 0 : 1;
         // Find the measure that holds e to check the capacity.
-        for (Measure& m : m_score.staves[size_t(m_cursor.staff)].measures) {
+        for (int mi = 0; mi < m_score.measureCount(); ++mi) {
+            Measure& m = m_score.staves[size_t(m_cursor.staff)].measures[size_t(mi)];
             const auto& ev = m.voice(m_cursor.voice);
             if (ev.empty() || e < &ev.front() || e > &ev.back()) continue;
             Event changed = *e;
             changed.dots = newDots;
-            if (m.filled(m_cursor.voice) - e->duration() + changed.duration() > m_score.time.capacity()) {
+            if (m.filled(m_cursor.voice) - e->duration() + changed.duration() > m_score.capacityAt(mi)) {
                 emit message(tooLong());
                 return false;
             }
@@ -548,7 +549,7 @@ void Editor::transpose(int steps)
         for (Pitch& p : e->pitches) {
             const int d = std::clamp(p.diatonic() + steps, 7, 7 * 8 + 6);
             const bool tied = p.tie;
-            p = Pitch::fromDiatonic(d, keyAlterFor(((d % 7) + 7) % 7, m_score.keyFifths));
+            p = Pitch::fromDiatonic(d, keyAlterFor(((d % 7) + 7) % 7, m_score.keyAt(m_cursor.measure)));
             p.tie = tied;
         }
         e->sortPitches();
@@ -586,10 +587,10 @@ void Editor::moveMeasure(int d)
 
 void Editor::moveStaff(int d)
 {
-    const Clef oldClef = m_score.staves[size_t(m_cursor.staff)].clef;
+    const Clef oldClef = m_score.clefAt(m_cursor.staff, m_cursor.measure);
     m_cursor.staff += d;
     clampCursor();
-    const Clef newClef = m_score.staves[size_t(m_cursor.staff)].clef;
+    const Clef newClef = m_score.clefAt(m_cursor.staff, m_cursor.measure);
     // Keep the cursor at the same visual height on the new staff.
     m_cursor.diatonic += clefMiddleLine(newClef) - clefMiddleLine(oldClef);
     clampCursor();
@@ -636,7 +637,7 @@ void Editor::deleteMeasure()
 {
     mutate(QStringLiteral("Excluir compasso"), [&] {
         if (m_score.measureCount() <= 1) return false;
-        for (Staff& s : m_score.staves) s.measures.erase(s.measures.begin() + m_cursor.measure);
+        m_score.removeMeasures(m_cursor.measure, m_cursor.measure);
         m_cursor.index = 0;
         return true;
     });
@@ -651,7 +652,7 @@ void Editor::deleteSelectedMeasures()
             emit message(QStringLiteral("A partitura precisa de pelo menos um compasso."));
             return false;
         }
-        for (Staff& s : m_score.staves) s.measures.erase(s.measures.begin() + a, s.measures.begin() + b + 1);
+        m_score.removeMeasures(a, b);
         m_cursor.measure = std::min(a, m_score.measureCount() - 1);
         m_cursor.index = 0;
         m_sel.active = false;
@@ -665,7 +666,7 @@ void Editor::insertMeasuresBefore(int n)
     const int at = m_sel.active ? m_sel.measure0 : m_cursor.measure;
     mutate(QStringLiteral("Inserir compassos"), [&] {
         if (n <= 0) return false;
-        for (Staff& s : m_score.staves) s.measures.insert(s.measures.begin() + at, size_t(n), Measure{});
+        m_score.insertMeasures(at, n);
         return true;
     });
 }
@@ -707,45 +708,61 @@ void Editor::clearSelectionContents()
     });
 }
 
-void Editor::setKeySignature(int fifths)
+namespace {
+// End (exclusive) of the stretch that starts at `from` and runs until the next change in `changes`.
+template <typename T>
+int segmentEnd(const std::map<int, T>& changes, int from, int count)
+{
+    auto it = changes.upper_bound(from);
+    return it == changes.end() ? count : std::min(it->first, count);
+}
+} // namespace
+
+void Editor::setKeySignature(int fifths, int from)
 {
     mutate(QStringLiteral("Armadura de clave"), [&] {
         fifths = std::clamp(fifths, -7, 7);
-        if (fifths == m_score.keyFifths) return false;
-        // Keep the music diatonic: notes that followed the old key follow the new one.
+        from = std::clamp(from, 0, m_score.measureCount() - 1);
+        const int old = m_score.keyAt(from);
+        if (fifths == old) return false;
+        const int end = segmentEnd(m_score.keyChanges, from, m_score.measureCount());
+        // Keep the music diatonic in that stretch: notes that followed the old key follow the new one.
         for (Staff& st : m_score.staves)
-            for (Measure& m : st.measures)
+            for (int m = from; m < end; ++m)
                 for (int v = 0; v < kVoices; ++v)
-                for (Event& e : m.voice(v))
-                    for (Pitch& p : e.pitches)
-                        if (p.alter == keyAlterFor(p.step, m_score.keyFifths)) p.alter = keyAlterFor(p.step, fifths);
-        m_score.keyFifths = fifths;
+                    for (Event& e : st.measures[size_t(m)].voice(v))
+                        for (Pitch& p : e.pitches)
+                            if (p.alter == keyAlterFor(p.step, old)) p.alter = keyAlterFor(p.step, fifths);
+        if (from == 0) m_score.keyFifths = fifths;
+        else if (fifths == m_score.keyAt(from - 1)) m_score.keyChanges.erase(from); // same as before: no change mark
+        else m_score.keyChanges[from] = fifths;
         return true;
     });
 }
 
-void Editor::setTimeSignature(TimeSig t)
+void Editor::setTimeSignature(TimeSig t, int from)
 {
     mutate(QStringLiteral("Fórmula de compasso"), [&] {
-        if (t.beats == m_score.time.beats && t.beatType == m_score.time.beatType) return false;
-        // Rebar: pour every staff's events into measures of the new length (events that do not
-        // fit at the end of a measure move to the next one).
+        from = std::clamp(from, 0, m_score.measureCount() - 1);
+        if (t == m_score.timeAt(from)) return false;
+        const int end = segmentEnd(m_score.timeChanges, from, m_score.measureCount());
+        // Rebar the stretch [from, end): pour each layer's events into measures of the new length
+        // (an event that does not fit moves to the next measure); empty measures stay empty.
         const Frac cap = t.capacity();
-        size_t maxMeasures = size_t(std::max(1, m_score.measureCount()));
-        // Each layer is rebarred on its own; layer lists per staff, then merged back.
+        size_t count = 1;
         std::vector<std::array<std::vector<std::vector<Event>>, kVoices>> rebarred(m_score.staves.size());
+        auto fill = [](const std::vector<Event>& evs) {
+            Frac f;
+            for (const Event& e : evs) f += e.duration();
+            return f;
+        };
         for (size_t s = 0; s < m_score.staves.size(); ++s) {
             for (int v = 0; v < kVoices; ++v) {
                 auto& out = rebarred[s][size_t(v)];
                 out.emplace_back();
-                auto fill = [&](const std::vector<Event>& evs) {
-                    Frac f;
-                    for (const Event& e : evs) f += e.duration();
-                    return f;
-                };
-                for (Measure& m : m_score.staves[s].measures) {
-                    auto& src = m.voice(v);
-                    if (src.empty()) { // keep empty measures as empty measures (whole-measure rests)
+                for (int m = from; m < end; ++m) {
+                    auto& src = m_score.staves[s].measures[size_t(m)].voice(v);
+                    if (src.empty()) {
                         if (!out.back().empty()) out.emplace_back();
                         out.emplace_back();
                         continue;
@@ -758,30 +775,41 @@ void Editor::setTimeSignature(TimeSig t)
                 }
                 while (out.size() > 1 && out.back().empty()) out.pop_back();
                 if (v == 0 || std::any_of(out.begin(), out.end(), [](const auto& x) { return !x.empty(); }))
-                    maxMeasures = std::max(maxMeasures, out.size());
+                    count = std::max(count, out.size());
             }
         }
-        for (size_t s = 0; s < m_score.staves.size(); ++s) {
-            std::vector<Measure> measures(maxMeasures);
-            for (int v = 0; v < kVoices; ++v) {
-                auto& lists = rebarred[s][size_t(v)];
-                for (size_t m = 0; m < lists.size() && m < maxMeasures; ++m) measures[m].voice(v) = std::move(lists[m]);
+        // Resize the stretch, keeping later changes on their measures.
+        const int oldCount = end - from;
+        if (int(count) > oldCount) m_score.insertMeasures(end, int(count) - oldCount);
+        else if (int(count) < oldCount) m_score.removeMeasures(from + int(count), end - 1);
+        for (size_t s = 0; s < m_score.staves.size(); ++s)
+            for (int i = 0; i < int(count); ++i) {
+                Measure& meas = m_score.staves[s].measures[size_t(from + i)];
+                for (int v = 0; v < kVoices; ++v) {
+                    auto& lists = rebarred[s][size_t(v)];
+                    meas.voice(v) = size_t(i) < lists.size() ? std::move(lists[size_t(i)]) : std::vector<Event>{};
+                }
             }
-            m_score.staves[s].measures = std::move(measures);
-        }
-        m_score.time = t;
+        if (from == 0) m_score.time = t;
+        else if (t == m_score.timeAt(from - 1)) m_score.timeChanges.erase(from);
+        else m_score.timeChanges[from] = t;
         m_cursor.index = 0;
         return true;
     });
 }
 
-void Editor::setClef(int staff, Clef clef)
+void Editor::setClef(int staff, Clef clef, int from)
 {
     mutate(QStringLiteral("Clave"), [&] {
-        if (staff < 0 || staff >= int(m_score.staves.size()) || m_score.staves[size_t(staff)].clef == clef) return false;
-        const int shift = clefMiddleLine(clef) - clefMiddleLine(m_score.staves[size_t(staff)].clef);
-        m_score.staves[size_t(staff)].clef = clef;
-        if (staff == m_cursor.staff) m_cursor.diatonic += shift;
+        if (staff < 0 || staff >= int(m_score.staves.size())) return false;
+        from = std::clamp(from, 0, m_score.measureCount() - 1);
+        Staff& st = m_score.staves[size_t(staff)];
+        const Clef old = st.clefAt(from);
+        if (old == clef) return false;
+        if (from == 0) st.clef = clef;
+        else if (clef == st.clefAt(from - 1)) st.clefChanges.erase(from);
+        else st.clefChanges[from] = clef;
+        if (staff == m_cursor.staff && m_cursor.measure >= from) m_cursor.diatonic += clefMiddleLine(clef) - clefMiddleLine(old);
         return true;
     });
 }

@@ -72,8 +72,17 @@ bool saveNative(const Score& score, const QString& path, QString* error)
         w.writeStartElement("staff");
         w.writeAttribute("name", st.name);
         w.writeAttribute("clef", clefKey(st.clef));
-        for (const Measure& m : st.measures) {
+        const bool firstStaff = &st == &score.staves.front();
+        for (size_t mi = 0; mi < st.measures.size(); ++mi) {
+            const Measure& m = st.measures[mi];
             w.writeStartElement("measure");
+            // Changes in the middle of the piece (time and key are stored on the first staff).
+            if (firstStaff && score.timeChangesAt(int(mi))) {
+                const TimeSig t = score.timeAt(int(mi));
+                w.writeAttribute("time", QStringLiteral("%1/%2").arg(t.beats).arg(t.beatType));
+            }
+            if (firstStaff && score.keyChangesAt(int(mi))) w.writeAttribute("key", QString::number(score.keyAt(int(mi))));
+            if (mi > 0 && st.clefChanges.count(int(mi))) w.writeAttribute("clef", clefKey(st.clefChanges.at(int(mi))));
             auto writeEvents = [&](const std::vector<Event>& events) {
                 for (const Event& e : events) {
                     w.writeStartElement(e.isRest() ? "rest" : "chord");
@@ -171,6 +180,13 @@ bool loadNative(Score& out, const QString& path, QString* error)
             } else if (n == u"measure" && staff) {
                 staff->measures.emplace_back();
                 measure = &staff->measures.back();
+                const int mi = int(staff->measures.size()) - 1;
+                if (mi > 0) {
+                    const QStringList ts = attr(a, "time").toString().split(QLatin1Char('/'));
+                    if (ts.size() == 2) s.timeChanges[mi] = TimeSig{ qBound(1, ts[0].toInt(), 64), qBound(1, ts[1].toInt(), 64) };
+                    if (!attr(a, "key").isEmpty()) s.keyChanges[mi] = qBound(-7, attrInt(a, "key", 0), 7);
+                    if (!attr(a, "clef").isEmpty()) staff->clefChanges[mi] = clefFromKey(attr(a, "clef"));
+                }
             } else if (n == u"voice" && measure) {
                 voiceIdx = qBound(0, attrInt(a, "n", 1) - 1, kVoices - 1);
             } else if ((n == u"chord" || n == u"rest") && measure) {

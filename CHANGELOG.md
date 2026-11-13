@@ -2,6 +2,17 @@
 
 Todas as mudanças de cada versão. A mais recente fica em cima.
 
+## [0.11.0] — 2026-11-13
+
+### ✨ Novidades
+- **Mudanças no meio da peça:** fórmula de compasso, tonalidade e clave podem mudar em qualquer compasso.
+  - **Ferramentas Fórmula de compasso, Armadura e Clave:** clique no compasso onde a mudança começa. A janela já vem com "A partir do compasso" preenchido e vale até a próxima mudança.
+  - **Fórmula:** só o trecho até a próxima mudança tem as notas redistribuídas; o número de compassos se ajusta sozinho.
+  - **Tonalidade:** as notas daquele trecho acompanham a nova armadura.
+  - **Desenho:** a mudança aparece no compasso, com bequadros cancelando a armadura antiga. Quando cai no começo de uma linha, entra no cabeçalho da linha.
+  - **Reprodução:** respeita os compassos de tamanhos diferentes.
+  - **MusicXML:** as mudanças passam a ser importadas e exportadas; antes eram ignoradas com aviso.
+
 ## [0.10.0] — 2026-11-13
 
 ### ✨ Novidades

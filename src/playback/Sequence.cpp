@@ -36,14 +36,13 @@ Sequence buildSequence(const Score& score, int fromMeasure)
     fromMeasure = std::clamp(fromMeasure, 0, std::max(0, nMeasures - 1));
     seq.fromMeasure = fromMeasure;
     const double secPerWhole = 4.0 * 60.0 / std::max(score.tempo, 1);
-    const Frac capacity = score.time.capacity();
 
     // Measure start times (a measure lasts its time signature, or longer if overfilled).
     double t = 0;
     std::vector<double> starts;
     for (int m = fromMeasure; m < nMeasures; ++m) {
         starts.push_back(t);
-        Frac len = capacity;
+        Frac len = score.capacityAt(m);
         for (const Staff& st : score.staves)
             for (int v = 0; v < kVoices; ++v) len = std::max(len, st.measures[size_t(m)].filled(v));
         t += len.toDouble() * secPerWhole;

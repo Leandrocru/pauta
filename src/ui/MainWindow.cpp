@@ -211,8 +211,8 @@ void MainWindow::buildMenus()
 
     QMenu* doc = menuBar()->addMenu(QStringLiteral("&Documento"));
     doc->addAction(QStringLiteral("&Título e compositor…"), this, &MainWindow::documentSetup);
-    doc->addAction(QStringLiteral("&Armadura de clave…"), this, &MainWindow::chooseKey);
-    doc->addAction(QStringLiteral("&Fórmula de compasso…"), this, &MainWindow::chooseTime);
+    doc->addAction(QStringLiteral("&Armadura de clave…"), this, [this] { chooseKey(); });
+    doc->addAction(QStringLiteral("&Fórmula de compasso…"), this, [this] { chooseTime(); });
     doc->addSeparator();
     doc->addAction(QStringLiteral("Adicionar &pauta…"), this, &MainWindow::addStaffDialog);
     doc->addAction(QStringLiteral("Adicionar &compassos…"), this, &MainWindow::addMeasuresDialog);
@@ -640,13 +640,13 @@ void MainWindow::rebuildToolMenu()
         break;
     case Tool::Clef:
         for (Clef c : { Clef::Treble, Clef::Bass, Clef::Alto, Clef::Tenor })
-            m_toolMenu->addAction(clefName(c), this, [ed, c] { ed->setClef(ed->cursor().staff, c); });
+            m_toolMenu->addAction(clefName(c), this, [ed, c] { ed->setClef(ed->cursor().staff, c, ed->cursor().measure); });
         break;
     case Tool::KeySig:
-        m_toolMenu->addAction(QStringLiteral("Mudar armadura…"), this, &MainWindow::chooseKey);
+        m_toolMenu->addAction(QStringLiteral("Mudar armadura…"), this, [this] { chooseKey(); });
         break;
     case Tool::TimeSig:
-        m_toolMenu->addAction(QStringLiteral("Mudar fórmula de compasso…"), this, &MainWindow::chooseTime);
+        m_toolMenu->addAction(QStringLiteral("Mudar fórmula de compasso…"), this, [this] { chooseTime(); });
         break;
     case Tool::Measure:
         m_toolMenu->addAction(QStringLiteral("Adicionar compassos ao final…"), this, &MainWindow::addMeasuresDialog);
@@ -700,50 +700,88 @@ void MainWindow::onToolClicked(Tool tool, int staff, int measure)
     m_editor->setCursor(c);
     switch (tool) {
     case Tool::Staff: editStaff(staff); break;
-    case Tool::Clef: {
-        QStringList names;
-        for (Clef cl : { Clef::Treble, Clef::Bass, Clef::Alto, Clef::Tenor }) names << clefName(cl);
-        bool ok = false;
-        const QString pick = QInputDialog::getItem(this, QStringLiteral("Clave"), QStringLiteral("Clave desta pauta:"), names,
-                                                   int(m_editor->score().staves[size_t(staff)].clef), false, &ok);
-        if (ok) m_editor->setClef(staff, Clef(names.indexOf(pick)));
-        break;
-    }
-    case Tool::KeySig: chooseKey(); break;
-    case Tool::TimeSig: chooseTime(); break;
+    case Tool::Clef: chooseClef(staff, measure); break;
+    case Tool::KeySig: chooseKey(measure); break;
+    case Tool::TimeSig: chooseTime(measure); break;
     default: break;
     }
 }
 
-void MainWindow::chooseKey()
+namespace {
+// "From measure" field shared by the key, time and clef dialogs.
+QSpinBox* fromMeasureBox(const Score& s, int measure)
 {
-    QStringList names;
-    for (int f = -7; f <= 7; ++f) names << keyName(f);
-    bool ok = false;
-    const QString pick = QInputDialog::getItem(this, QStringLiteral("Armadura de clave"), QStringLiteral("Tonalidade:"), names,
-                                               m_editor->score().keyFifths + 7, false, &ok);
-    if (ok) m_editor->setKeySignature(names.indexOf(pick) - 7);
+    auto* box = new QSpinBox;
+    box->setRange(1, std::max(1, s.measureCount()));
+    box->setValue(std::clamp(measure, 0, s.measureCount() - 1) + 1);
+    box->setToolTip(QStringLiteral("Vale deste compasso até a próxima mudança (compasso 1 = desde o início)."));
+    return box;
 }
 
-void MainWindow::chooseTime()
+void addOkCancel(QDialog& dlg, QFormLayout* form)
 {
+    auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    QObject::connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    QObject::connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    form->addRow(bb);
+}
+} // namespace
+
+void MainWindow::chooseKey(int fromMeasure)
+{
+    const Score& s = m_editor->score();
+    const int m0 = fromMeasure >= 0 ? fromMeasure : m_editor->cursor().measure;
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("Armadura de clave"));
+    auto* form = new QFormLayout(&dlg);
+    auto* key = new QComboBox;
+    for (int f = -7; f <= 7; ++f) key->addItem(keyName(f), f);
+    key->setCurrentIndex(s.keyAt(m0) + 7);
+    QSpinBox* from = fromMeasureBox(s, m0);
+    form->addRow(QStringLiteral("Tonalidade:"), key);
+    form->addRow(QStringLiteral("A partir do compasso:"), from);
+    addOkCancel(dlg, form);
+    if (dlg.exec() == QDialog::Accepted) m_editor->setKeySignature(key->currentData().toInt(), from->value() - 1);
+}
+
+void MainWindow::chooseTime(int fromMeasure)
+{
+    const Score& s = m_editor->score();
+    const int m0 = fromMeasure >= 0 ? fromMeasure : m_editor->cursor().measure;
+    const TimeSig cur = s.timeAt(m0);
     QDialog dlg(this);
     dlg.setWindowTitle(QStringLiteral("Fórmula de compasso"));
     auto* form = new QFormLayout(&dlg);
     auto* beats = new QSpinBox;
     beats->setRange(1, 32);
-    beats->setValue(m_editor->score().time.beats);
+    beats->setValue(cur.beats);
     auto* type = new QComboBox;
     for (int v : { 1, 2, 4, 8, 16, 32 }) type->addItem(QString::number(v), v);
-    type->setCurrentIndex(type->findData(m_editor->score().time.beatType));
+    type->setCurrentIndex(type->findData(cur.beatType));
+    QSpinBox* from = fromMeasureBox(s, m0);
     form->addRow(QStringLiteral("Tempos por compasso:"), beats);
     form->addRow(QStringLiteral("Unidade de tempo:"), type);
-    form->addRow(new QLabel(QStringLiteral("<small>As notas são redistribuídas nos novos compassos.</small>")));
-    auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
-    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-    form->addRow(bb);
-    if (dlg.exec() == QDialog::Accepted) m_editor->setTimeSignature(TimeSig{ beats->value(), type->currentData().toInt() });
+    form->addRow(QStringLiteral("A partir do compasso:"), from);
+    form->addRow(new QLabel(QStringLiteral("<small>As notas desse trecho (até a próxima mudança) são redistribuídas.</small>")));
+    addOkCancel(dlg, form);
+    if (dlg.exec() == QDialog::Accepted)
+        m_editor->setTimeSignature(TimeSig{ beats->value(), type->currentData().toInt() }, from->value() - 1);
+}
+
+void MainWindow::chooseClef(int staff, int fromMeasure)
+{
+    const Score& s = m_editor->score();
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("Clave"));
+    auto* form = new QFormLayout(&dlg);
+    auto* clef = new QComboBox;
+    for (Clef c : { Clef::Treble, Clef::Bass, Clef::Alto, Clef::Tenor }) clef->addItem(clefName(c));
+    clef->setCurrentIndex(int(s.clefAt(staff, fromMeasure)));
+    QSpinBox* from = fromMeasureBox(s, fromMeasure);
+    form->addRow(QStringLiteral("Clave:"), clef);
+    form->addRow(QStringLiteral("A partir do compasso:"), from);
+    addOkCancel(dlg, form);
+    if (dlg.exec() == QDialog::Accepted) m_editor->setClef(staff, Clef(clef->currentIndex()), from->value() - 1);
 }
 
 void MainWindow::editStaff(int staff)
@@ -827,7 +865,7 @@ void MainWindow::updateStatus()
     if (s.staves.empty()) return;
     const Staff& st = s.staves[size_t(c.staff)];
     const QString staffName = st.name.isEmpty() ? QStringLiteral("Pauta %1").arg(c.staff + 1) : st.name;
-    const Pitch p = Pitch::fromDiatonic(c.diatonic, keyAlterFor(((c.diatonic % 7) + 7) % 7, s.keyFifths));
+    const Pitch p = Pitch::fromDiatonic(c.diatonic, keyAlterFor(((c.diatonic % 7) + 7) % 7, s.keyAt(c.measure)));
     m_status->setText(QStringLiteral("%1  ·  %2  ·  Camada %3  ·  Compasso %4 de %5  ·  Cursor: %6  ·  Duração: %7")
                           .arg(toolInfo(m_tool).name, staffName)
                           .arg(c.voice + 1)
