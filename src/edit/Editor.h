@@ -64,7 +64,10 @@ public:
     void toggleArticulation(unsigned artic); // on the selection, or the current/previous note
     void addSmartShape(int kind, int staff, int voice, int m0, int i0, int m1, int i1); // 0 slur, 1 cresc, 2 dim
     void smartShapeOnSelection(int kind); // from the first to the last note of the selection (each staff)
-    void clearSmartShapes();              // in the selection, or on the note at the cursor
+    void clearSmartShapes();
+    void setSyllable(int staff, int measure, int voice, int index, int verse, const Syllable& syllable);
+    void setChordSymbol(int staff, int measure, int voice, int index, const QString& text);
+    const Event* eventAt(int staff, int measure, int voice, int index) const;              // in the selection, or on the note at the cursor
     void setDynamic(int dynamic);            // 0 removes; selection: first note of each staff                // = or L (Finale-style: tie to the next note)
     void toggleDot();                // .
     void transpose(int steps);       // Shift+Up/Down on the current event

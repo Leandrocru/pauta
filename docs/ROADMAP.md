@@ -41,7 +41,8 @@ Cada etapa termina com um programa utilizável.
 - [ ] Layout incremental (re-gravar só o sistema afetado)
 
 ## Etapa 4 — Ferramentas no estilo Finale
-- [ ] Ferramentas por modo: Expressão, Articulação, Letra, Acordes, Repetição
+- [x] Ferramentas Expressão, Articulação, Letra (estrofes, hífens, melismas) e Cifra
+- [ ] Ferramenta Repetição (ritornelos, casas de 1ª/2ª vez, D.C./D.S.)
 - [ ] Partes extraídas vinculadas à grade
 - [ ] HyperScribe-like: entrada por teclado MIDI
 - [ ] Simple Entry com paleta completa

@@ -407,8 +407,38 @@ private:
         pg.lines.push_back({ QLineF(x1, y1, x2, y2), w * m_sp });
     }
     qreal y(qreal staffTop, int pos) const { return staffTop + (4 - pos) * m_sp / 2; }
-    qreal staffDist() const { return (4 + kStaffGap) * m_sp; }
-    qreal systemHeight() const { return (qreal(m_score.staves.size()) - 1) * staffDist() + 4 * m_sp; }
+    // Vertical room of each staff in a system: lyrics below, chord symbols above.
+    struct StaffBand {
+        int verses = 0;
+        bool chords = false;
+        qreal lyricBase = 0; // baseline of verse 1, relative to the staff's top line
+        qreal chordBase = 0; // baseline of chord symbols, relative to the staff's top line (negative = above)
+        qreal below = 0;     // extra room needed under the bottom line
+        qreal above = 0;     // extra room needed over the top line
+    };
+    std::vector<StaffBand> bandsFor(int first, int last) const;
+    std::vector<qreal> offsetsFor(const std::vector<StaffBand>& bands) const;
+    qreal systemHeightFor(int first, int last) const { return offsetsFor(bandsFor(first, last)).back() + 4 * m_sp; }
+    std::vector<StaffBand> m_bands;   // of the system being drawn
+    std::vector<qreal> m_offsets;     // staff top offsets of the system being drawn
+
+    struct PendingLyric {
+        bool hyphen = false, extender = false;
+        qreal xEnd = 0, y = 0, lastNoteEnd = 0;
+        int page = 0;
+        qreal staffTop = 0, systemEndX = 0;
+    };
+    std::map<long, PendingLyric> m_lyrics; // key: (staff * kVoices + layer) * 16 + verse
+    void drawWords(PageLayout& pg, int page, int staff, int voice, const Event& e, qreal x, qreal staffTop, qreal systemEndX);
+    void flushMelismas()
+    {
+        for (auto& [key, pl] : m_lyrics)
+            if (pl.extender) {
+                if (pl.lastNoteEnd > pl.xEnd + 0.6 * m_sp)
+                    page(pl.page).lines.push_back({ QLineF(pl.xEnd + 0.2 * m_sp, pl.y, pl.lastNoteEnd, pl.y), 0.12 * m_sp });
+                pl.extender = false;
+            }
+    }
     PageLayout& page(int i)
     {
         while (int(m_layout.pages.size()) <= i) m_layout.pages.emplace_back();
@@ -845,6 +875,131 @@ void Builder::handleShapes(int pageIdx, int staff, int voice, int measure, int i
     }
 }
 
+std::vector<Builder::StaffBand> Builder::bandsFor(int first, int last) const
+{
+    const qreal sp = m_sp;
+    std::vector<StaffBand> bands(m_score.staves.size());
+    for (size_t s = 0; s < bands.size(); ++s) {
+        StaffBand& b = bands[s];
+        int top = 4, bottom = -4;
+        bool dyn = false;
+        for (int mm = first; mm <= last; ++mm) {
+            const Measure& meas = m_score.staves[s].measures[size_t(mm)];
+            const StaffInfo& si = m_spacing[size_t(mm)].staves[s];
+            for (int v = 0; v < kVoices; ++v) {
+                const auto& evs = meas.voice(v);
+                for (size_t k = 0; k < evs.size(); ++k) {
+                    const Event& e = evs[k];
+                    const EventInfo& inf = si.v[size_t(v)].events[k];
+                    for (size_t verse = 0; verse < e.lyrics.size(); ++verse)
+                        if (!e.lyrics[verse].text.isEmpty()) b.verses = std::max(b.verses, int(verse) + 1);
+                    b.chords |= !e.chordSymbol.isEmpty();
+                    dyn |= e.dynamic || e.hairpin;
+                    if (inf.pos.empty()) continue;
+                    const bool stem = e.durLog >= 1;
+                    top = std::max(top, inf.pos.back() + (stem && inf.stemUp ? 7 : 1));
+                    bottom = std::min(bottom, inf.pos.front() - (stem && !inf.stemUp ? 7 : 1));
+                }
+            }
+        }
+        // Lyrics: under the notes (and under dynamics/hairpins, which sit at ~7 spaces).
+        b.lyricBase = std::max(7.6 * sp, (4 - bottom) * sp / 2 + 2.8 * sp);
+        if (dyn) b.lyricBase = std::max(b.lyricBase, 9.6 * sp);
+        if (b.verses > 0) b.below = b.lyricBase + (b.verses - 1) * 2.4 * sp + 0.8 * sp - 4 * sp;
+        // Chord symbols: over the staff and over high notes.
+        b.chordBase = std::min(-2.0 * sp, (4 - top) * sp / 2 - 1.4 * sp);
+        if (b.chords) b.above = -b.chordBase + 1.8 * sp;
+    }
+    return bands;
+}
+
+std::vector<qreal> Builder::offsetsFor(const std::vector<StaffBand>& bands) const
+{
+    std::vector<qreal> off(bands.size(), 0);
+    for (size_t s = 1; s < bands.size(); ++s)
+        off[s] = off[s - 1] + 4 * m_sp + std::max(kStaffGap * m_sp, bands[s - 1].below + bands[s].above + 1.0 * m_sp);
+    return off;
+}
+
+void Builder::drawWords(PageLayout& pg, int pageIdx, int staff, int voice, const Event& e, qreal x, qreal staffTop, qreal systemEndX)
+{
+    const qreal sp = m_sp;
+    const StaffBand& band = m_bands[size_t(staff)];
+    const qreal headW = m_font.advance(e.isRest() ? smufl::restFor(e.durLog) : smufl::noteheadFor(e.durLog), sp);
+
+    // Chord symbol, left-aligned with the notehead.
+    if (!e.chordSymbol.isEmpty()) {
+        // Letters as text; sharps and flats from the music font (chord-symbol glyphs), so they
+        // look right whatever text font is installed.
+        const qreal yb = staffTop + band.chordBase;
+        qreal cx = x;
+        QString chunk;
+        auto flush = [&] {
+            if (chunk.isEmpty()) return;
+            pg.texts.push_back({ chunk, QPointF(cx, yb), 11, true, false, 0 });
+            cx += textAdvance(chunk, 11, true);
+            chunk.clear();
+        };
+        for (QChar c : prettyChord(e.chordSymbol)) {
+            if (c.unicode() == 0x266F || c.unicode() == 0x266D) {
+                flush();
+                const char16_t g = c.unicode() == 0x266F ? char16_t(0xED62) : char16_t(0xED60); // csymAccidentalSharp/Flat
+                const qreal k = 0.55; // chord-symbol size relative to the staff glyphs
+                pg.scaledGlyphs.push_back({ m_font.glyphIndex(g), QPointF(cx + 0.05 * sp, yb - 0.15 * sp), k });
+                cx += m_font.advance(g, sp) * k + 0.1 * sp;
+            } else {
+                chunk += c;
+            }
+        }
+        flush();
+    }
+
+    // Lyrics: one line per verse, syllables centred under the notehead.
+    const qreal lyricSize = 10;
+    for (int verse = 0; verse < band.verses; ++verse) {
+        const long key = long(staff * kVoices + voice) * 16 + verse;
+        const qreal yy = staffTop + band.lyricBase + verse * 2.4 * sp;
+        const Syllable* sy = e.isRest() ? nullptr : e.lyric(verse);
+        auto it = m_lyrics.find(key);
+        if (it != m_lyrics.end()) {
+            PendingLyric& pl = it->second;
+            const bool sameLine = pl.page == pageIdx && qFuzzyCompare(pl.staffTop, staffTop);
+            if (sy) {
+                const qreal w = textAdvance(sy->text, lyricSize);
+                const qreal xStart = x + headW / 2 - w / 2;
+                PageLayout& prevPg = page(pl.page);
+                if (pl.extender && pl.lastNoteEnd > pl.xEnd + 0.6 * sp)
+                    prevPg.lines.push_back({ QLineF(pl.xEnd + 0.2 * sp, pl.y, pl.lastNoteEnd, pl.y), 0.12 * sp });
+                if (pl.hyphen) {
+                    // A short dash halfway between the syllables (or at the end of the line before a break).
+                    const qreal hx = sameLine ? (pl.xEnd + xStart) / 2 : std::min(pl.xEnd + 1.2 * sp, pl.systemEndX - 0.4 * sp);
+                    const qreal hy = pl.y - lyricSize * 0.3;
+                    if (!sameLine || xStart - pl.xEnd > 0.9 * sp)
+                        prevPg.lines.push_back({ QLineF(hx - 0.4 * sp, hy, hx + 0.4 * sp, hy), 0.11 * sp });
+                }
+                m_lyrics.erase(it);
+            } else if (!e.isRest() && pl.extender && sameLine) {
+                pl.lastNoteEnd = x + headW; // the melisma line runs under this note too
+            }
+        }
+        if (sy) {
+            pg.texts.push_back({ sy->text, QPointF(x + headW / 2, yy), lyricSize, false, false, 1 });
+            if (sy->hyphen || sy->extender) {
+                PendingLyric pl;
+                pl.hyphen = sy->hyphen;
+                pl.extender = sy->extender && !sy->hyphen;
+                pl.xEnd = x + headW / 2 + textAdvance(sy->text, lyricSize) / 2;
+                pl.y = yy;
+                pl.lastNoteEnd = x + headW;
+                pl.page = pageIdx;
+                pl.staffTop = staffTop;
+                pl.systemEndX = systemEndX;
+                m_lyrics[key] = pl;
+            }
+        }
+    }
+}
+
 void Builder::glyphCentered(PageLayout& pg, char16_t cp, qreal cx, qreal cy)
 {
     const QRectF bb = m_font.bbox(cp, m_sp);
@@ -1045,11 +1200,14 @@ void Builder::drawSystem(const System& sys, int pageIdx, qreal left, qreal top, 
     for (int m = sys.first; m <= sys.last; ++m)
         xEnd += m_spacing[size_t(m)].width(sys.stretch) + (m > sys.first ? m_spacing[size_t(m)].prefix : 0);
 
+    flushMelismas(); // lines left open by the previous system end where its last note ended
+    m_bands = bandsFor(sys.first, sys.last);
+    m_offsets = offsetsFor(m_bands);
     const qreal sysTop = top;
-    const qreal sysBottom = top + systemHeight();
+    const qreal sysBottom = top + m_offsets.back() + 4 * m_sp;
 
     for (int s = 0; s < nStaves; ++s) {
-        const qreal st = top + s * staffDist();
+        const qreal st = top + m_offsets[size_t(s)];
         for (int l = 0; l < 5; ++l) line(pg, left, st + l * m_sp, xEnd, st + l * m_sp, kStaffLineW);
         drawHeader(pg, s, left, st, sys.first, sys.showTime);
 
@@ -1081,7 +1239,7 @@ void Builder::drawSystem(const System& sys, int pageIdx, qreal left, qreal top, 
         const qreal pre = m > sys.first ? ms.prefix : 0; // clef/key/time change drawn at the measure start
         const qreal w = ms.width(sys.stretch) + pre;
         for (int s = 0; s < nStaves; ++s) {
-            const qreal st = top + s * staffDist();
+            const qreal st = top + m_offsets[size_t(s)];
             const Measure& meas = m_score.staves[size_t(s)].measures[size_t(m)];
             const StaffInfo& sinfo = ms.staves[size_t(s)];
             MeasureSlot slot;
@@ -1092,6 +1250,8 @@ void Builder::drawSystem(const System& sys, int pageIdx, qreal left, qreal top, 
             slot.x1 = mx + w;
             slot.staffTop = st;
             slot.clef = m_score.clefAt(s, m);
+            slot.lyricBase = st + m_bands[size_t(s)].lyricBase;
+            slot.chordBase = st + m_bands[size_t(s)].chordBase;
             if (pre > 0) drawChanges(pg, s, m, mx, st);
             if (meas.isEmpty()) {
                 drawMeasureRest(pg, mx + pre, mx + w, st);
@@ -1107,6 +1267,7 @@ void Builder::drawSystem(const System& sys, int pageIdx, qreal left, qreal top, 
                     const qreal ex = mx + pre + ms.xAt(ms.indexOf(info.onset), sys.stretch) + (info.shiftRight ? 1.1 * headW : 0);
                     drawEvent(pg, evs[k], info, ex, st, info.beamGroup >= 0);
                     drawMarks(pg, evs[k], info, ex, st);
+                    drawWords(pg, pageIdx, s, v, evs[k], ex, st, xEnd);
                     handleTies(pageIdx, s, v, evs[k], info, ex, st, left + sys.headerW, xEnd);
                     handleShapes(pageIdx, s, v, m, int(k), evs[k], info, ex, st, left + sys.headerW, xEnd);
                     xs.push_back(ex);
@@ -1161,9 +1322,11 @@ Layout Builder::run()
         qreal width = sys.headerW;
         for (int mm = 0; mm < nMeasures; ++mm) width += m_spacing[size_t(mm)].width(1.0) + m_spacing[size_t(mm)].prefix;
         m_layout.pageWidth = 2 * margin + indent + width;
-        m_layout.pageHeight = 2 * margin + 8 * m_sp + systemHeight();
+        m_layout.pageHeight = 2 * margin + 8 * m_sp + systemHeightFor(0, nMeasures - 1)
+                              + bandsFor(0, nMeasures - 1).front().above + bandsFor(0, nMeasures - 1).back().below;
         m_opt.pageHeight = m_layout.pageHeight;
         drawSystem(sys, 0, margin + indent, margin + 4 * m_sp, true);
+        flushMelismas();
         return std::move(m_layout);
     }
 
@@ -1243,14 +1406,17 @@ Layout Builder::run()
         }
         above = std::max(0.0, (top - 4) * m_sp / 2 - 3 * m_sp);
         below = std::max(0.0, (-4 - bottom) * m_sp / 2 - 3 * m_sp);
+        const auto bands = bandsFor(sys.first, sys.last);
+        above = std::max(above, bands.front().above - 3 * m_sp);
+        below = std::max(below, bands.back().below - 3 * m_sp);
     };
 
-    const qreal sysH = systemHeight();
     int pageIdx = 0;
     qreal yTop = contentTop + 4 * m_sp;
     for (size_t i = 0; i < systems.size(); ++i) {
         qreal above = 0, below = 0;
         extents(systems[i], above, below);
+        const qreal sysH = systemHeightFor(systems[i].first, systems[i].last);
         if (i > 0 && yTop + above + sysH + below > m_opt.pageHeight - margin) {
             ++pageIdx;
             yTop = margin + 4 * m_sp;
@@ -1260,6 +1426,7 @@ Layout Builder::run()
         drawSystem(systems[i], pageIdx, left, yTop, i == 0);
         yTop += sysH + below + kSystemGap * m_sp;
     }
+    flushMelismas();
     return std::move(m_layout);
 }
 

@@ -24,6 +24,21 @@ Frac Event::duration() const
     return inTuplet() ? base * Frac(tupletNormal, tupletActual) : base;
 }
 
+QString prettyChord(const QString& typed)
+{
+    // '#' always becomes a sharp; 'b' becomes a flat right after a root/bass letter or before a number.
+    QString out;
+    for (qsizetype i = 0; i < typed.size(); ++i) {
+        const QChar c = typed[i];
+        const bool afterRoot = i > 0 && QStringLiteral("ABCDEFG").contains(typed[i - 1]) && (i == 1 || typed[i - 2] == u'/');
+        const bool beforeNumber = i + 1 < typed.size() && typed[i + 1].isDigit();
+        if (c == u'#') out += QChar(0x266F);
+        else if (c == u'b' && (afterRoot || beforeNumber)) out += QChar(0x266D);
+        else out += c;
+    }
+    return out;
+}
+
 QString dynamicText(int d)
 {
     static const char* t[DynCount] = { "", "ppp", "pp", "p", "mp", "mf", "f", "ff", "fff", "sfz", "sf", "fp" };

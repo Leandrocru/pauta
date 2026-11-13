@@ -125,6 +125,7 @@ void ScoreView::setPlaybackMeasure(int measure)
 void ScoreView::setTool(Tool t)
 {
     m_tool = t;
+    m_text.active = false;
     m_hover = Hit{};
     updateToolCursor();
     update();
@@ -210,6 +211,23 @@ void ScoreView::paintEvent(QPaintEvent* e)
         paintPage(p, m_layout, i);
         if (m_tool == Tool::SpeedyEntry) paintSpeedy(p, i);
         if (m_tool == Tool::SimpleEntry) paintGhost(p, i);
+        if ((m_tool == Tool::Lyrics || m_tool == Tool::Chord) && m_text.active) {
+            // Where the typed text goes: a box under (lyrics) or over (chords) the note.
+            if (const MeasureSlot* s = m_layout.slot(m_text.staff, m_text.measure); s && s->page == i) {
+                const auto& xs = s->eventX[size_t(m_text.voice)];
+                if (m_text.index < int(xs.size())) {
+                    const qreal sp = m_layout.sp;
+                    const qreal x = xs[size_t(m_text.index)];
+                    const qreal base = m_tool == Tool::Lyrics ? s->lyricBase + m_text.verse * 2.4 * sp : s->chordBase;
+                    p.fillRect(QRectF(x - 0.5 * sp, s->staffTop - 1.5 * sp, 2.2 * sp, 7 * sp), QColor(30, 150, 60, 40));
+                    QPen frame(QColor(30, 150, 60));
+                    frame.setWidthF(0.12 * sp);
+                    p.setPen(frame);
+                    p.setBrush(Qt::NoBrush);
+                    p.drawRect(QRectF(x - 1.6 * sp, base - 2.4 * sp, 4.4 * sp, 3.0 * sp));
+                }
+            }
+        }
         if (m_tool == Tool::SmartShape && m_shapeStart.valid) {
             // Mark the first note of the shape being drawn.
             if (const MeasureSlot* s = m_layout.slot(m_shapeStart.staff, m_shapeStart.measure); s && s->page == i) {
@@ -492,8 +510,107 @@ bool ScoreView::entryKeys(QKeyEvent* e)
     return false;
 }
 
+// While typing lyrics or chord symbols, keys that are also shortcuts (Space = play, letters,
+// Backspace, arrows) must reach the score instead of triggering the menu actions.
+bool ScoreView::event(QEvent* e)
+{
+    if (e->type() == QEvent::ShortcutOverride && m_text.active && (m_tool == Tool::Lyrics || m_tool == Tool::Chord)) {
+        auto* ke = static_cast<QKeyEvent*>(e);
+        const bool plain = !(ke->modifiers() & (Qt::ControlModifier | Qt::AltModifier));
+        if (plain) {
+            e->accept();
+            return true;
+        }
+    }
+    return QWidget::event(e);
+}
+
+bool ScoreView::stepText(int dir)
+{
+    const bool lyrics = m_tool == Tool::Lyrics;
+    int m = m_text.measure, i = m_text.index;
+    const int count = m_ed->score().measureCount();
+    while (true) {
+        i += dir;
+        while (true) {
+            const auto& evs = m_ed->score().staves[size_t(m_text.staff)].measures[size_t(m)].voice(m_text.voice);
+            if (i >= 0 && i < int(evs.size())) break;
+            if (dir > 0) { if (++m >= count) return false; i = 0; }
+            else {
+                if (--m < 0) return false;
+                i = int(m_ed->score().staves[size_t(m_text.staff)].measures[size_t(m)].voice(m_text.voice).size()) - 1;
+            }
+        }
+        const Event* ev = m_ed->eventAt(m_text.staff, m, m_text.voice, i);
+        if (ev && (!lyrics || !ev->isRest())) break; // syllables go on notes, chord symbols on any event
+    }
+    m_text.measure = m;
+    m_text.index = i;
+    Cursor c = m_ed->cursor();
+    c.staff = m_text.staff;
+    c.measure = m;
+    c.voice = m_text.voice;
+    c.index = i;
+    m_ed->setCursor(c);
+    update();
+    return true;
+}
+
+bool ScoreView::textKeys(QKeyEvent* e)
+{
+    if (!m_text.active) return false;
+    const bool lyrics = m_tool == Tool::Lyrics;
+    const Event* ev = m_ed->eventAt(m_text.staff, m_text.measure, m_text.voice, m_text.index);
+    if (!ev) { m_text.active = false; return false; }
+    Syllable sy = lyrics && m_text.verse < int(ev->lyrics.size()) ? ev->lyrics[size_t(m_text.verse)] : Syllable{};
+    QString chord = ev->chordSymbol;
+    auto store = [&] {
+        if (lyrics) m_ed->setSyllable(m_text.staff, m_text.measure, m_text.voice, m_text.index, m_text.verse, sy);
+        else m_ed->setChordSymbol(m_text.staff, m_text.measure, m_text.voice, m_text.index, chord);
+    };
+    switch (e->key()) {
+    case Qt::Key_Escape: m_text.active = false; update(); return true;
+    case Qt::Key_Left: stepText(-1); return true;
+    case Qt::Key_Right:
+    case Qt::Key_Space:
+    case Qt::Key_Tab:
+    case Qt::Key_Return:
+    case Qt::Key_Enter: stepText(1); return true;
+    case Qt::Key_Up: if (lyrics) setVerse(m_text.verse - 1); return true;
+    case Qt::Key_Down: if (lyrics) setVerse(m_text.verse + 1); return true;
+    case Qt::Key_Backspace:
+        if (lyrics ? sy.text.isEmpty() : chord.isEmpty()) { stepText(-1); return true; }
+        if (lyrics) { sy.text.chop(1); sy.hyphen = sy.extender = false; } else chord.chop(1);
+        store();
+        return true;
+    default: break;
+    }
+    const QString t = e->text();
+    if (t.isEmpty() || !t.at(0).isPrint()) return false;
+    if (lyrics && t == u"-") { // end of syllable, the word goes on
+        if (sy.text.isEmpty()) return true;
+        sy.hyphen = true;
+        sy.extender = false;
+        store();
+        stepText(1);
+        return true;
+    }
+    if (lyrics && t == u"_") { // melisma line
+        if (sy.text.isEmpty()) return true;
+        sy.extender = true;
+        sy.hyphen = false;
+        store();
+        stepText(1);
+        return true;
+    }
+    if (lyrics) sy.text += t; else chord += t;
+    store();
+    return true;
+}
+
 void ScoreView::keyPressEvent(QKeyEvent* e)
 {
+    if ((m_tool == Tool::Lyrics || m_tool == Tool::Chord) && textKeys(e)) return;
     // Alt+1..4 chooses the active layer in every tool (as Finale's layer selector).
     if ((e->modifiers() & Qt::AltModifier) && e->key() >= Qt::Key_1 && e->key() <= Qt::Key_4) {
         m_ed->setVoice(e->key() - Qt::Key_1);
@@ -596,6 +713,33 @@ void ScoreView::mousePressEvent(QMouseEvent* e)
             if (h.pagePt.x() < h.slot->eventX[size_t(c.voice)][k] + 1.6 * sp) { c.index = int(k); break; }
         c.diatonic = h.diatonic;
         m_ed->setCursor(c);
+        return;
+    }
+    case Tool::Lyrics:
+    case Tool::Chord: {
+        // Click a note to start typing its syllable / chord symbol.
+        if (!h.slot) { m_text.active = false; update(); return; }
+        const qreal sp = m_layout.sp;
+        int bestV = -1, bestK = -1;
+        qreal bestD = 1.8 * sp;
+        for (int v = 0; v < kVoices; ++v)
+            for (size_t k = 0; k < h.slot->eventX[size_t(v)].size(); ++k) {
+                const qreal d = std::abs(h.pagePt.x() - (h.slot->eventX[size_t(v)][k] + 0.6 * sp));
+                if (d < bestD) { bestD = d; bestV = v; bestK = int(k); }
+            }
+        if (bestK < 0) return;
+        m_text.active = true;
+        m_text.staff = h.slot->staff;
+        m_text.measure = h.slot->measure;
+        m_text.voice = bestV;
+        m_text.index = bestK;
+        Cursor c = m_ed->cursor();
+        c.staff = m_text.staff;
+        c.measure = m_text.measure;
+        c.voice = bestV;
+        c.index = bestK;
+        m_ed->setCursor(c);
+        update();
         return;
     }
     case Tool::SmartShape: {

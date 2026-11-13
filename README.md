@@ -25,6 +25,7 @@ o maior número possível de formatos de partitura.
 - Barras de ligação e ligaduras de valor
 - Quiálteras (Ctrl+3 tercina, Ctrl+5 quintina…) com número e colchete
 - Reprodução (Espaço): usa o sintetizador do próprio Windows (piano, cordas, sopros, coro conforme o nome da pauta); no Linux, um sintetizador interno
+- Letra (várias estrofes, hífens e linhas de melisma) e cifras (C, F#m7b5, G/B…) com ♯/♭ de verdade; as pautas se afastam sozinhas para dar espaço
 - Até 4 camadas (vozes) por pauta, como no Finale: Alt+1–4 ou o seletor "Camada" na barra inferior
 - Importa e exporta MusicXML (`.musicxml`, `.mxl` compactado e `.xml`): leva e traz partituras do Finale, Sibelius, MuseScore e Dorico
 

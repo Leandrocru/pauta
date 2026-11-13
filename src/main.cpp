@@ -294,7 +294,7 @@ int main(int argc, char* argv[])
                 const QKeySequence seq = QKeySequence::fromString(tok, QKeySequence::PortableText);
                 if (seq.isEmpty()) continue;
                 const QKeyCombination kc = seq[0];
-                const QString text = tok.size() == 1 ? tok.toLower() : QString();
+                const QString text = tok.size() == 1 ? tok : QString();
                 QKeyEvent press(QEvent::KeyPress, kc.key(), kc.keyboardModifiers(), text);
                 QApplication::sendEvent(w.view(), &press);
             }

@@ -23,6 +23,14 @@ struct Pitch {
     bool operator==(const Pitch&) const = default;
 };
 
+// One syllable of lyrics under a note.
+struct Syllable {
+    QString text;
+    bool hyphen = false;   // the word continues on the next syllable ("can-")
+    bool extender = false; // melisma line after the syllable
+    bool operator==(const Syllable&) const = default;
+};
+
 struct Event {
     int durLog = 2;              // -1=breve, 0=whole, 1=half, 2=quarter, 3=eighth, 4=16th, 5=32nd, 6=64th
     int dots = 0;
@@ -39,6 +47,13 @@ struct Event {
     bool slurEnd = false;
     int hairpin = 0;             // Hairpin starting here: 1 = crescendo, 2 = diminuendo
     bool hairpinEnd = false;
+    std::vector<Syllable> lyrics; // one per verse (empty text = no syllable in that verse)
+    QString chordSymbol;          // e.g. "C7", "F#m7b5", "G/B" (as typed)
+
+    const Syllable* lyric(int verse) const
+    {
+        return verse < int(lyrics.size()) && !lyrics[size_t(verse)].text.isEmpty() ? &lyrics[size_t(verse)] : nullptr;
+    }
 
     bool isRest() const { return pitches.empty(); }
     bool inTuplet() const { return tupletActual > 0 && tupletNormal > 0; }
@@ -140,6 +155,7 @@ QString clefName(Clef clef);
 QString keyName(int fifths);
 int tupletNormalFor(int actual);             // 3 -> 2, 5 -> 4, 2 -> 3 (duplet), ...
 QString dynamicText(int dynamic);            // "mf"
+QString prettyChord(const QString& typed);   // "F#m7b5" -> "F♯m7♭5" for display
 int dynamicFromText(const QString& text);    // "mf" -> DynMF (0 if unknown)
 int dynamicVelocity(int dynamic);            // MIDI velocity for playback
 QString articulationName(unsigned artic);    // "Staccato"

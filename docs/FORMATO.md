@@ -28,6 +28,8 @@ XML UTF-8, legível e editável à mão.
 - `dyn="mf"` em `<chord>`/`<rest>`: dinâmica que começa nessa nota (`ppp`…`fff`, `sfz`, `sf`, `fp`).
 - `slurStart="1"` / `slurEnd="1"` em `<chord>`/`<rest>`: começo e fim de uma ligadura de expressão (o começo se liga ao próximo fim na mesma camada).
 - `hairpin="cresc|dim"` / `hairpinEnd="1"`: começo e fim de crescendo/diminuendo.
+- `chordSymbol="C7"` em `<chord>`/`<rest>`: cifra acima da nota (como foi digitada; `#` e `b` viram ♯ e ♭ na tela).
+- `<lyric verse="1" text="can" hyphen="1" extender="1"/>` dentro de `<chord>`: sílaba da letra (estrofe, hífen para a próxima sílaba, linha de melisma).
 - `tie="1"` em `<note>`: ligadura de valor com a mesma nota no próximo evento da pauta.
 - `alter` em `<note>`: -2..2 (bemol duplo … sustenido duplo). A nota escrita é
   sempre explícita; a armadura só decide quais acidentes aparecem.

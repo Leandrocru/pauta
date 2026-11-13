@@ -56,8 +56,8 @@ inline const std::vector<ToolInfo>& toolList()
         { Tool::Articulation, QStringLiteral("Articulação"), QStringLiteral("Escolha a articulação na paleta e clique nas notas (clicar de novo remove)."), true, false },
         { Tool::Expression, QStringLiteral("Expressão"), QStringLiteral("Escolha a dinâmica na paleta e clique na nota onde ela começa."), true, false },
         { Tool::Repeat, QStringLiteral("Repetição"), QStringLiteral("Em breve."), false, false },
-        { Tool::Chord, QStringLiteral("Cifra"), QStringLiteral("Em breve."), false, true },
-        { Tool::Lyrics, QStringLiteral("Letra"), QStringLiteral("Em breve."), false, false },
+        { Tool::Chord, QStringLiteral("Cifra"), QStringLiteral("Clique numa nota e digite a cifra (C7, Am, F#m7b5, G/B). Espaço passa para a próxima nota; Esc termina."), true, true },
+        { Tool::Lyrics, QStringLiteral("Letra"), QStringLiteral("Clique numa nota e digite: Espaço = próxima nota, - = hífen, _ = melisma, ↑/↓ = estrofe, Esc termina."), true, false },
         { Tool::Text, QStringLiteral("Texto"), QStringLiteral("Em breve."), false, false },
         { Tool::PageLayout, QStringLiteral("Layout da página"), QStringLiteral("Em breve."), false, true },
     };

@@ -29,6 +29,8 @@ public:
     void setArmedArticulation(unsigned a) { m_armedArtic = a; }
     void setArmedDynamic(int d) { m_armedDyn = d; }
     void setArmedShape(int kind) { m_armedShape = kind; m_shapeStart = {}; update(); }
+    void setVerse(int verse) { m_text.verse = std::clamp(verse, 0, 9); update(); }
+    int verse() const { return m_text.verse; }
 
     QRectF pageRect(int page) const; // in widget pixels
     int pageAt(qreal y) const;       // page under a widget y coordinate
@@ -44,6 +46,7 @@ signals:
 protected:
     void paintEvent(QPaintEvent* e) override;
     void keyPressEvent(QKeyEvent* e) override;
+    bool event(QEvent* e) override;
     void mousePressEvent(QMouseEvent* e) override;
     void mouseMoveEvent(QMouseEvent* e) override;
     void mouseReleaseEvent(QMouseEvent* e) override;
@@ -90,6 +93,10 @@ private:
     int m_armedDyn = 5;        // DynMF
     int m_armedShape = 0;      // 0 slur, 1 crescendo, 2 diminuendo
     struct ShapeStart { bool valid = false; int staff = 0, voice = 0, measure = 0, index = 0; } m_shapeStart;
+    // Typing lyrics / chord symbols into the score.
+    struct TextEntry { bool active = false; int staff = 0, measure = 0, voice = 0, index = 0, verse = 0; } m_text;
+    bool textKeys(QKeyEvent* e);
+    bool stepText(int dir); // to the next/previous note (lyrics skip rests)
 
     // Mouse interaction state
     bool m_selecting = false;

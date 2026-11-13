@@ -60,6 +60,42 @@ Clef clefFrom(const QString& sign, int line)
     return Clef::Treble; // G, percussion, TAB: closest we have
 }
 
+// Chord-symbol suffix <-> MusicXML <kind> value (the typed suffix also travels in kind@text).
+const std::pair<const char*, const char*> kChordKinds[] = {
+    { "", "major" }, { "m", "minor" }, { "7", "dominant" }, { "maj7", "major-seventh" }, { "m7", "minor-seventh" },
+    { "dim", "diminished" }, { "dim7", "diminished-seventh" }, { "aug", "augmented" }, { "+", "augmented" },
+    { "m7b5", "half-diminished" }, { "sus4", "suspended-fourth" }, { "sus2", "suspended-second" },
+    { "6", "major-sixth" }, { "m6", "minor-sixth" }, { "9", "dominant-ninth" }, { "maj9", "major-ninth" },
+    { "m9", "minor-ninth" }, { "11", "dominant-11th" }, { "13", "dominant-13th" }, { "5", "power" },
+    { "mmaj7", "major-minor" }, { "7+", "augmented-seventh" },
+};
+
+// <harmony> -> "F#m7b5", "G/B", ...
+QString chordFromHarmony(const QDomElement& h)
+{
+    const QDomElement rootEl = h.firstChildElement(QStringLiteral("root"));
+    const QString step = rootEl.firstChildElement(QStringLiteral("root-step")).text().trimmed();
+    if (step.isEmpty()) return {};
+    auto accidental = [](const QString& alter) {
+        const int a = int(std::lround(alter.toDouble()));
+        return a > 0 ? QString(a, QLatin1Char('#')) : a < 0 ? QString(-a, QLatin1Char('b')) : QString();
+    };
+    QString out = step + accidental(rootEl.firstChildElement(QStringLiteral("root-alter")).text());
+    const QDomElement kind = h.firstChildElement(QStringLiteral("kind"));
+    if (kind.hasAttribute(QStringLiteral("text"))) {
+        out += kind.attribute(QStringLiteral("text"));
+    } else {
+        const QString k = kind.text().trimmed();
+        for (const auto& [suffix, name] : kChordKinds)
+            if (k == QLatin1String(name)) { out += QLatin1String(suffix); break; }
+    }
+    const QDomElement bass = h.firstChildElement(QStringLiteral("bass"));
+    if (!bass.isNull())
+        out += QLatin1Char('/') + bass.firstChildElement(QStringLiteral("bass-step")).text().trimmed()
+               + accidental(bass.firstChildElement(QStringLiteral("bass-alter")).text());
+    return out;
+}
+
 QString childText(const QDomElement& e, const QString& name) { return e.firstChildElement(name).text().trimmed(); }
 
 QByteArray readScoreBytes(const QString& path, QString* error)
@@ -194,6 +230,7 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
             std::vector<StaffState> st(staves.size());
             Frac pos, lastStart;
             std::array<int, 8> pendingDynamic{}; // per staff: dynamic waiting for its note
+            std::array<QString, 8> pendingChord;  // per staff: chord symbol waiting for its event
             auto staffIndex = [&](const QDomElement& e) {
                 const int n = e.firstChildElement(QStringLiteral("staff")).text().toInt();
                 return std::clamp(n <= 0 ? 0 : n - 1, 0, int(st.size()) - 1);
@@ -265,6 +302,9 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
                         s.tempo = std::clamp(int(std::lround(snd.attribute(QStringLiteral("tempo")).toDouble())), 20, 400);
                         tempoSet = true;
                     }
+                } else if (tag == u"harmony") {
+                    const QString chord = chordFromHarmony(el);
+                    if (!chord.isEmpty()) pendingChord[size_t(staffIndex(el))] = chord;
                 } else if (tag == u"sound") {
                     // First tempo mark (<sound tempo="...">) becomes the playback tempo.
                     const QDomElement snd = tag == u"sound" ? el : el.firstChildElement(QStringLiteral("sound"));
@@ -373,6 +413,28 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
                         int& pd = pendingDynamic[size_t(staffIndex(el))];
                         if (pd && !ev.dynamic) ev.dynamic = pd;
                         pd = 0;
+                    }
+                    // Chord symbol waiting for this staff's next event; lyrics of this note.
+                    if (QString& pc = pendingChord[size_t(staffIndex(el))]; !pc.isEmpty()) {
+                        ev.chordSymbol = pc;
+                        pc.clear();
+                    }
+                    int lyricIndex = 0;
+                    for (QDomElement ly = el.firstChildElement(QStringLiteral("lyric")); !ly.isNull();
+                         ly = ly.nextSiblingElement(QStringLiteral("lyric")), ++lyricIndex) {
+                        bool ok = false;
+                        int verse = ly.attribute(QStringLiteral("number")).toInt(&ok) - 1;
+                        if (!ok || verse < 0) verse = lyricIndex;
+                        verse = std::min(verse, 9);
+                        Syllable sy;
+                        sy.text = childText(ly, QStringLiteral("text"));
+                        const QString syl = childText(ly, QStringLiteral("syllabic"));
+                        sy.hyphen = syl == u"begin" || syl == u"middle";
+                        const QDomElement ext = ly.firstChildElement(QStringLiteral("extend"));
+                        sy.extender = !ext.isNull() && ext.attribute(QStringLiteral("type")) != u"stop";
+                        if (sy.text.isEmpty()) continue;
+                        if (int(ev.lyrics.size()) <= verse) ev.lyrics.resize(size_t(verse) + 1);
+                        ev.lyrics[size_t(verse)] = sy;
                     }
                     if (L == 0) {
                         int& pw = pendingWedge[size_t(staffIndex(el))];

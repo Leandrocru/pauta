@@ -34,6 +34,8 @@ struct PageLayout {
     QList<QPointF> glyphPos;
     std::vector<LineItem> lines;
     std::vector<QPainterPath> fills; // filled shapes: beams, ties
+    struct ScaledGlyph { quint32 glyph; QPointF pos; qreal scale; };
+    std::vector<ScaledGlyph> scaledGlyphs; // music glyphs at another size (e.g. accidentals in chord symbols)
     std::vector<TextItem> texts;
 };
 
@@ -47,6 +49,8 @@ struct MeasureSlot {
     Clef clef = Clef::Treble;
     std::array<std::vector<qreal>, kVoices> eventX{}; // x of each event's notehead, per layer
     std::array<qreal, kVoices> appendX{};             // x where a new event would go, per layer
+    qreal lyricBase = 0;                              // y of the first lyric line
+    qreal chordBase = 0;                              // y of the chord symbol line
 };
 
 struct Layout {

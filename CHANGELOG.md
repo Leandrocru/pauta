@@ -2,6 +2,19 @@
 
 Todas as mudanças de cada versão. A mais recente fica em cima.
 
+## [0.12.0] — 2026-11-13
+
+### ✨ Novidades
+- **Ferramenta Letra:** clique numa nota e digite a sílaba.
+  - **Espaço** ou **Tab** vai para a próxima nota (pausas são puladas); **Enter** e as setas ← → também andam.
+  - **-** separa sílabas de uma palavra: o hífen aparece entre elas.
+  - **_** estende a sílaba por várias notas (melisma), com a linha de extensão embaixo.
+  - **↑ ↓** troca de estrofe; o menu **Letra** também escolhe a estrofe 1 a 4.
+  - **Backspace** apaga; **Esc** termina.
+- **Ferramenta Cifra:** clique numa nota e digite o acorde (C, Am, G7, F#m7b5, Bbmaj7, G/B…). Os # e b viram ♯ e ♭ na partitura.
+- **Espaço automático:** as pautas se afastam sozinhas quando há letra embaixo ou cifras em cima, só nas linhas que precisam.
+- **MusicXML:** letra (com estrofes, hífens e melismas) e cifras passam a ser importadas e exportadas.
+
 ## [0.11.0] — 2026-11-13
 
 ### ✨ Novidades

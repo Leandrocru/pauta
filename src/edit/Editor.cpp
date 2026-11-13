@@ -466,6 +466,38 @@ void Editor::smartShapeOnSelection(int kind)
     });
 }
 
+const Event* Editor::eventAt(int staff, int measure, int voice, int index) const
+{
+    if (staff < 0 || staff >= int(m_score.staves.size()) || measure < 0 || measure >= m_score.measureCount()) return nullptr;
+    const auto& evs = m_score.staves[size_t(staff)].measures[size_t(measure)].voice(voice);
+    return index >= 0 && index < int(evs.size()) ? &evs[size_t(index)] : nullptr;
+}
+
+void Editor::setSyllable(int staff, int measure, int voice, int index, int verse, const Syllable& syllable)
+{
+    const Event* cur = eventAt(staff, measure, voice, index);
+    if (!cur || cur->isRest()) return;
+    const Syllable empty;
+    if ((verse < int(cur->lyrics.size()) ? cur->lyrics[size_t(verse)] : empty) == syllable) return;
+    mutate(QStringLiteral("Letra"), [&] {
+        Event& e = m_score.staves[size_t(staff)].measures[size_t(measure)].voice(voice)[size_t(index)];
+        if (int(e.lyrics.size()) <= verse) e.lyrics.resize(size_t(verse) + 1);
+        e.lyrics[size_t(verse)] = syllable;
+        while (!e.lyrics.empty() && e.lyrics.back().text.isEmpty()) e.lyrics.pop_back();
+        return true;
+    });
+}
+
+void Editor::setChordSymbol(int staff, int measure, int voice, int index, const QString& text)
+{
+    const Event* cur = eventAt(staff, measure, voice, index);
+    if (!cur || cur->chordSymbol == text) return;
+    mutate(QStringLiteral("Cifra"), [&] {
+        m_score.staves[size_t(staff)].measures[size_t(measure)].voice(voice)[size_t(index)].chordSymbol = text;
+        return true;
+    });
+}
+
 void Editor::clearSmartShapes()
 {
     mutate(QStringLiteral("Remover linhas e ligaduras"), [&] {

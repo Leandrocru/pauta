@@ -672,6 +672,27 @@ void MainWindow::rebuildToolMenu()
         if (m_tool == Tool::Articulation) {
             for (unsigned a : kArticAll)
                 m_toolMenu->addAction(articulationName(a), this, [this, a] { m_view->setArmedArticulation(a); });
+        } else if (m_tool == Tool::Lyrics) {
+            for (int v = 0; v < 4; ++v)
+                m_toolMenu->addAction(QStringLiteral("Estrofe %1").arg(v + 1), this, [this, v] {
+                    m_view->setVerse(v);
+                    statusBar()->showMessage(QStringLiteral("Digitando a estrofe %1").arg(v + 1), 3000);
+                });
+            m_toolMenu->addSeparator();
+            m_toolMenu->addAction(QStringLiteral("Como digitar…"), this, [this] {
+                QMessageBox::information(this, QStringLiteral("Letra"), QStringLiteral(
+                    "Clique na primeira nota e digite a sílaba.<br><br>"
+                    "<b>Espaço</b>: próxima nota &nbsp; <b>-</b>: hífen (a palavra continua) &nbsp; "
+                    "<b>_</b>: linha de melisma<br><b>↑ / ↓</b>: estrofe anterior / seguinte &nbsp; "
+                    "<b>Backspace</b>: apaga &nbsp; <b>Esc</b>: termina"));
+            });
+        } else if (m_tool == Tool::Chord) {
+            m_toolMenu->addAction(QStringLiteral("Como digitar…"), this, [this] {
+                QMessageBox::information(this, QStringLiteral("Cifra"), QStringLiteral(
+                    "Clique na nota e digite a cifra: <b>C</b>, <b>Am</b>, <b>G7</b>, <b>Bb</b>, <b>F#m7b5</b>, <b>G/B</b>…<br>"
+                    "# e b viram ♯ e ♭ na partitura.<br><br><b>Espaço</b>: próxima nota &nbsp; <b>Backspace</b>: apaga &nbsp; "
+                    "<b>Esc</b>: termina"));
+            });
         } else if (m_tool == Tool::SmartShape) {
             m_toolMenu->addAction(QStringLiteral("Ligadura de expressão"), this, [this] { m_view->setArmedShape(0); });
             m_toolMenu->addAction(QStringLiteral("Crescendo"), this, [this] { m_view->setArmedShape(1); });

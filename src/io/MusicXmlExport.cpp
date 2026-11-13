@@ -34,6 +34,63 @@ const char* typeName(int durLog)
     }
 }
 
+// Chord-symbol suffix <-> MusicXML <kind> value (the typed suffix also travels in kind@text).
+const std::pair<const char*, const char*> kChordKinds[] = {
+    { "", "major" }, { "m", "minor" }, { "7", "dominant" }, { "maj7", "major-seventh" }, { "m7", "minor-seventh" },
+    { "dim", "diminished" }, { "dim7", "diminished-seventh" }, { "aug", "augmented" }, { "+", "augmented" },
+    { "m7b5", "half-diminished" }, { "sus4", "suspended-fourth" }, { "sus2", "suspended-second" },
+    { "6", "major-sixth" }, { "m6", "minor-sixth" }, { "9", "dominant-ninth" }, { "maj9", "major-ninth" },
+    { "m9", "minor-ninth" }, { "11", "dominant-11th" }, { "13", "dominant-13th" }, { "5", "power" },
+    { "mmaj7", "major-minor" }, { "7+", "augmented-seventh" },
+};
+
+// "F#m7b5" / "G/B" -> <harmony>. Returns false for text that is not a chord (nothing written).
+bool writeHarmony(QXmlStreamWriter& w, const QString& chord, const QString& staffNo, bool multiStaff)
+{
+    auto parseNote = [](const QString& t, qsizetype& i, QString& step, int& alter) {
+        if (i >= t.size() || !QStringLiteral("ABCDEFG").contains(t[i])) return false;
+        step = t[i++];
+        alter = 0;
+        while (i < t.size() && (t[i] == u'#' || t[i] == u'b')) alter += t[i++] == u'#' ? 1 : -1;
+        return true;
+    };
+    const qsizetype slash = chord.indexOf(QLatin1Char('/'));
+    const QString main = slash >= 0 ? chord.left(slash) : chord;
+    qsizetype i = 0;
+    QString step;
+    int alter = 0;
+    if (!parseNote(main, i, step, alter)) return false;
+    const QString suffix = main.mid(i);
+    QString bassStep;
+    int bassAlter = 0;
+    if (slash >= 0) {
+        qsizetype j = 0;
+        if (!parseNote(chord.mid(slash + 1), j, bassStep, bassAlter)) return false;
+    }
+    QString kind = QStringLiteral("other");
+    for (const auto& [suf, name] : kChordKinds)
+        if (suffix == QLatin1String(suf)) { kind = QLatin1String(name); break; }
+
+    w.writeStartElement("harmony");
+    w.writeStartElement("root");
+    w.writeTextElement("root-step", step);
+    if (alter) w.writeTextElement("root-alter", QString::number(alter));
+    w.writeEndElement();
+    w.writeStartElement("kind");
+    w.writeAttribute("text", suffix);
+    w.writeCharacters(kind);
+    w.writeEndElement();
+    if (!bassStep.isEmpty()) {
+        w.writeStartElement("bass");
+        w.writeTextElement("bass-step", bassStep);
+        if (bassAlter) w.writeTextElement("bass-alter", QString::number(bassAlter));
+        w.writeEndElement();
+    }
+    if (multiStaff) w.writeTextElement("staff", staffNo);
+    w.writeEndElement();
+    return true;
+}
+
 // A part = a named staff plus the unnamed staves right after it (e.g. piano treble + bass).
 struct Part {
     QString name;
@@ -138,6 +195,7 @@ private:
     int64_t m_div;
     // Per staff and layer: pitches of the previous event that carried a tie (to write the "stop").
     std::map<std::pair<int, int>, std::set<int>> m_tiedFrom;
+    std::map<std::pair<std::pair<int, int>, int>, bool> m_prevHyphen; // (staff, layer), verse -> last syllable had a hyphen
 };
 
 void Writer::write()
@@ -294,6 +352,7 @@ void Writer::writeLayer(const Part& p, int staffInPart, int voice, int m, int64_
                 m_w.writeEmptyElement(dynamicText(e.dynamic));
                 m_w.writeEndElement();
             });
+        if (!e.chordSymbol.isEmpty()) writeHarmony(m_w, e.chordSymbol, staffNo, p.staffCount > 1);
         if (e.hairpin)
             direction([&] {
                 m_w.writeEmptyElement("wedge");
@@ -377,6 +436,22 @@ void Writer::writeLayer(const Part& p, int staffInPart, int voice, int m, int64_
                 }
                 if (first && (e.articulations & ArticFermata)) m_w.writeEmptyElement("fermata");
                 m_w.writeEndElement();
+            }
+            // Lyrics (on the first note of a chord). syllabic follows from the hyphens.
+            if (k == 0 && !rest) {
+                for (size_t verse = 0; verse < e.lyrics.size(); ++verse) {
+                    const Syllable& sy = e.lyrics[verse];
+                    if (sy.text.isEmpty()) continue;
+                    bool& prevHyphen = m_prevHyphen[{ { staffIdx, voice }, int(verse) }];
+                    const char* syl = prevHyphen ? (sy.hyphen ? "middle" : "end") : (sy.hyphen ? "begin" : "single");
+                    prevHyphen = sy.hyphen;
+                    m_w.writeStartElement("lyric");
+                    m_w.writeAttribute("number", QString::number(verse + 1));
+                    m_w.writeTextElement("syllabic", QString::fromLatin1(syl));
+                    m_w.writeTextElement("text", sy.text);
+                    if (sy.extender) m_w.writeEmptyElement("extend");
+                    m_w.writeEndElement();
+                }
             }
             m_w.writeEndElement(); // note
         }

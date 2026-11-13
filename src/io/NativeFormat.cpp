@@ -99,6 +99,7 @@ bool saveNative(const Score& score, const QString& path, QString* error)
                     if (e.slurEnd) w.writeAttribute("slurEnd", QStringLiteral("1"));
                     if (e.hairpin) w.writeAttribute("hairpin", e.hairpin == HairpinCresc ? QStringLiteral("cresc") : QStringLiteral("dim"));
                     if (e.hairpinEnd) w.writeAttribute("hairpinEnd", QStringLiteral("1"));
+                    if (!e.chordSymbol.isEmpty()) w.writeAttribute("chordSymbol", e.chordSymbol);
                     if (e.inTuplet()) {
                         w.writeAttribute("tuplet", QStringLiteral("%1:%2").arg(e.tupletActual).arg(e.tupletNormal));
                         if (e.tupletStart) w.writeAttribute("tupletStart", QStringLiteral("1"));
@@ -109,6 +110,15 @@ bool saveNative(const Score& score, const QString& path, QString* error)
                         w.writeAttribute("oct", QString::number(p.octave));
                         if (p.alter) w.writeAttribute("alter", QString::number(p.alter));
                         if (p.tie) w.writeAttribute("tie", QStringLiteral("1"));
+                    }
+                    for (size_t v = 0; v < e.lyrics.size(); ++v) {
+                        const Syllable& sy = e.lyrics[v];
+                        if (sy.text.isEmpty()) continue;
+                        w.writeEmptyElement("lyric");
+                        w.writeAttribute("verse", QString::number(v + 1));
+                        w.writeAttribute("text", sy.text);
+                        if (sy.hyphen) w.writeAttribute("hyphen", QStringLiteral("1"));
+                        if (sy.extender) w.writeAttribute("extender", QStringLiteral("1"));
                     }
                     w.writeEndElement();
                 }
@@ -209,6 +219,14 @@ bool loadNative(Score& out, const QString& path, QString* error)
                 const QString hp = attr(a, "hairpin").toString();
                 event->hairpin = hp == u"cresc" ? HairpinCresc : hp == u"dim" ? HairpinDim : HairpinNone;
                 event->hairpinEnd = attrInt(a, "hairpinEnd", 0) != 0;
+                event->chordSymbol = attr(a, "chordSymbol").toString();
+            } else if (n == u"lyric" && event) {
+                const int verse = qBound(1, attrInt(a, "verse", 1), 10) - 1;
+                if (int(event->lyrics.size()) <= verse) event->lyrics.resize(size_t(verse) + 1);
+                Syllable& sy = event->lyrics[size_t(verse)];
+                sy.text = attr(a, "text").toString();
+                sy.hyphen = attrInt(a, "hyphen", 0) != 0;
+                sy.extender = attrInt(a, "extender", 0) != 0;
             } else if (n == u"note" && event) {
                 Pitch p;
                 const QString step = attr(a, "step").toString();

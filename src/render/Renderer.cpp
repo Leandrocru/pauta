@@ -55,6 +55,23 @@ void paintPage(QPainter& p, const Layout& layout, int pageIdx)
         p.drawGlyphRun(QPointF(0, 0), run);
     }
 
+    // Music glyphs drawn at a different size.
+    if (!pg.scaledGlyphs.empty()) {
+        const QRawFont raw = smufl::Font::instance().rawFont(layout.sp);
+        p.setPen(Qt::black);
+        for (const auto& g : pg.scaledGlyphs) {
+            QGlyphRun run;
+            run.setRawFont(raw);
+            run.setGlyphIndexes({ g.glyph });
+            run.setPositions({ QPointF(0, 0) });
+            p.save();
+            p.translate(g.pos);
+            p.scale(g.scale, g.scale);
+            p.drawGlyphRun(QPointF(0, 0), run);
+            p.restore();
+        }
+    }
+
     // Text (title, names, measure numbers). Fonts are set up at 100 px and scaled, so that
     // sizes are exact page points on every device (screen DPI does not leak into the layout).
     for (const TextItem& t : pg.texts) {
