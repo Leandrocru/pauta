@@ -148,7 +148,22 @@ void MainWindow::buildMenus()
     disabledAction(imp, QStringLiteral("Finale (.musx)…"));
     QMenu* exp = file->addMenu(QStringLiteral("&Exportar"));
     exp->addAction(QStringLiteral("&PDF…"), QKeySequence(QStringLiteral("Ctrl+Shift+E")), this, &MainWindow::exportPdf);
-    disabledAction(exp, QStringLiteral("MusicXML…"));
+    exp->addAction(QStringLiteral("&MusicXML (.musicxml, .mxl)…"), QKeySequence(QStringLiteral("Ctrl+Shift+X")), this, [this] {
+        const QString base = m_path.isEmpty() ? QStringLiteral("partitura.musicxml")
+                                              : QFileInfo(m_path).completeBaseName() + QStringLiteral(".musicxml");
+        QString chosenFilter;
+        QString path = QFileDialog::getSaveFileName(this, QStringLiteral("Exportar MusicXML"), base,
+                                                    QStringLiteral("MusicXML (*.musicxml);;MusicXML compactado (*.mxl)"), &chosenFilter);
+        if (path.isEmpty()) return;
+        if (!path.endsWith(QStringLiteral(".musicxml"), Qt::CaseInsensitive) && !path.endsWith(QStringLiteral(".mxl"), Qt::CaseInsensitive)
+            && !path.endsWith(QStringLiteral(".xml"), Qt::CaseInsensitive))
+            path += chosenFilter.contains(QStringLiteral(".mxl")) ? QStringLiteral(".mxl") : QStringLiteral(".musicxml");
+        QString err;
+        if (!io::exportMusicXml(m_editor->score(), path, &err))
+            QMessageBox::warning(this, QStringLiteral("Exportar MusicXML"), QStringLiteral("Não foi possível exportar: %1").arg(err));
+        else
+            statusBar()->showMessage(QStringLiteral("MusicXML exportado: %1").arg(path), 5000);
+    });
     disabledAction(exp, QStringLiteral("Arquivo MIDI…"));
     disabledAction(exp, QStringLiteral("Áudio…"));
     file->addSeparator();

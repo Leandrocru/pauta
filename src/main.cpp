@@ -132,10 +132,11 @@ int main(int argc, char* argv[])
         QStringLiteral("(teste) Ações de mouse: \"move|click:compasso:alvo:altura\" (alvo = fim ou índice da nota; altura = diatônico, 34 = Si4)."),
         QStringLiteral("acoes"));
     QCommandLineOption whatsNewGrabOpt(QStringLiteral("grab-whats-new"), QStringLiteral("(teste) Captura a janela de novidades."), QStringLiteral("arquivo.png"));
+    QCommandLineOption mxlOutOpt(QStringLiteral("export-musicxml"), QStringLiteral("Exporta para MusicXML (.musicxml ou .mxl) e sai."), QStringLiteral("arquivo"));
     QCommandLineOption updCheckOpt(QStringLiteral("update-check"), QStringLiteral("(teste) Consulta a última versão no GitHub e sai."));
     QCommandLineOption playCheckOpt(QStringLiteral("playback-check"), QStringLiteral("(teste) Monta a sequência de reprodução e abre a saída de som, sem tocar."));
     QCommandLineOption iconOpt(QStringLiteral("write-icon"), QStringLiteral("(desenvolvimento) Gera o ícone do programa."), QStringLiteral("pasta"));
-    cli.addOptions({ pdfOpt, pngOpt, benchOpt, emptyOpt, keysOpt, grabOpt, savePauta, toolOpt, scrollOpt, selectOpt, iconOpt, playCheckOpt, mouseOpt, updCheckOpt, whatsNewGrabOpt });
+    cli.addOptions({ pdfOpt, pngOpt, benchOpt, emptyOpt, keysOpt, grabOpt, savePauta, toolOpt, scrollOpt, selectOpt, iconOpt, playCheckOpt, mouseOpt, updCheckOpt, whatsNewGrabOpt, mxlOutOpt });
     cli.addPositionalArgument(QStringLiteral("partitura"), QStringLiteral("Arquivo .pauta ou MusicXML a abrir."));
     cli.process(app);
 
@@ -217,6 +218,17 @@ int main(int argc, char* argv[])
     }
 
     const QStringList args = cli.positionalArguments();
+    if (cli.isSet(mxlOutOpt)) {
+        Score s = Score::makeDemo();
+        QString err;
+        if (!args.isEmpty() && !io::loadAnyScore(s, args.first(), &err)) {
+            out << "falhou: " << err << Qt::endl;
+            return 1;
+        }
+        const bool ok = io::exportMusicXml(s, cli.value(mxlOutOpt), &err);
+        out << (ok ? QStringLiteral("ok") : QStringLiteral("falhou: ") + err) << Qt::endl;
+        return ok ? 0 : 1;
+    }
     if (cli.isSet(pdfOpt) || cli.isSet(pngOpt)) {
         Score s = Score::makeDemo();
         QString err;

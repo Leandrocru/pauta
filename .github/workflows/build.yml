@@ -110,6 +110,27 @@ jobs:
           ./build/pauta --playback-check tests/data/piano-teste.musicxml
           ./build/pauta --playback-check tests/data/articulacoes.musicxml
           ./build/pauta --playback-check tests/data/ligaduras.musicxml
+
+      - name: MusicXML — ida e volta e validação pelo esquema oficial
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          mkdir -p rt xsd
+          for f in tests/data/*.musicxml; do
+            n=$(basename "$f" .musicxml)
+            ./build/pauta --export-png "rt/$n-orig.png" "$f"
+            for ext in musicxml mxl; do
+              ./build/pauta --export-musicxml "rt/$n.$ext" "$f"
+              ./build/pauta --export-png "rt/$n-$ext.png" "rt/$n.$ext"
+              cmp "rt/$n-orig.png" "rt/$n-$ext.png"
+            done
+          done
+          ./build/pauta --export-musicxml rt/demo.musicxml
+          for x in musicxml.xsd xlink.xsd xml.xsd; do
+            curl -sSL --retry 3 -o "xsd/$x" "https://raw.githubusercontent.com/w3c/musicxml/gh-pages/schema/$x"
+          done
+          python3 -m pip install --quiet lxml
+          python3 tools/validate-musicxml.py xsd "rt/*.musicxml"
           ./build/pauta --export-png mx.png tests/data/piano-teste.musicxml
           ./build/pauta --export-png mxl.png tests/data/piano-teste.mxl
           cmp mx.png mxl.png

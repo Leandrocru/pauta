@@ -26,7 +26,7 @@ Cada etapa termina com um programa utilizável.
 
 ## Etapa 2 — Formatos principais
 - [x] MusicXML (`.musicxml` / `.mxl`) — importar (até 4 vozes por pauta viram camadas; avisa o que simplificou)
-- [ ] MusicXML — exportar
+- [x] MusicXML — exportar (.musicxml e .mxl, validado pelo esquema oficial 4.0)
 - [ ] MIDI (`.mid`) — importar (com quantização) e exportar
 - [x] Reprodução: sintetizador MIDI do Windows / sintetizador interno no Linux; Espaço toca/para; andamento
 - [ ] Reprodução com SoundFont próprio (timbres melhores e iguais em todos os sistemas)

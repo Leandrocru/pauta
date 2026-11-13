@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 # The icon resource (.rc) has no includes; skip cmcldeps, which breaks with some CMake/Ninja setups.
 set(CMAKE_NINJA_CMCLDEPS_RC OFF)
-project(Pauta VERSION 0.9.0 LANGUAGES CXX)
+project(Pauta VERSION 0.10.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -23,6 +23,7 @@ qt_add_executable(Pauta WIN32
     src/io/NativeFormat.cpp
     src/io/MusicXml.h
     src/io/MusicXml.cpp
+    src/io/MusicXmlExport.cpp
     src/render/Smufl.h
     src/render/Smufl.cpp
     src/render/Layout.h

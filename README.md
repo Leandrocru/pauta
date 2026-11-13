@@ -26,7 +26,7 @@ o maior número possível de formatos de partitura.
 - Quiálteras (Ctrl+3 tercina, Ctrl+5 quintina…) com número e colchete
 - Reprodução (Espaço): usa o sintetizador do próprio Windows (piano, cordas, sopros, coro conforme o nome da pauta); no Linux, um sintetizador interno
 - Até 4 camadas (vozes) por pauta, como no Finale: Alt+1–4 ou o seletor "Camada" na barra inferior
-- Importa MusicXML (`.musicxml`, `.mxl` compactado e `.xml`) — o caminho para trazer partituras do Finale, Sibelius e MuseScore
+- Importa e exporta MusicXML (`.musicxml`, `.mxl` compactado e `.xml`): leva e traz partituras do Finale, Sibelius, MuseScore e Dorico
 
 ## Instalar (sem terminal)
 

@@ -2,6 +2,15 @@
 
 Todas as mudanças de cada versão. A mais recente fica em cima.
 
+## [0.10.0] — 2026-11-13
+
+### ✨ Novidades
+- **Exportar MusicXML** (**Arquivo → Exportar → MusicXML**, Ctrl+Shift+X), em `.musicxml` ou `.mxl` compactado. Assim as partituras do Pauta abrem no Finale, MuseScore, Sibelius, Dorico e outros.
+  - **Estrutura:** partes (piano em duas pautas numa parte só), armadura, fórmula de compasso, claves e andamento.
+  - **Notas:** acordes, pausas, pontos, acidentes, as 4 camadas e barras de ligação.
+  - **Marcas:** ligaduras de valor e de expressão, quiálteras, articulações, fermatas, dinâmicas, crescendo e diminuendo.
+- Os arquivos seguem o **padrão oficial MusicXML 4.0** e são conferidos contra ele a cada versão.
+
 ## [0.9.0] — 2026-11-13
 
 ### ✨ Novidades

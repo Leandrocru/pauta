@@ -14,6 +14,9 @@ bool importMusicXml(Score& score, const QString& path, QString* error = nullptr,
 // Opens any supported score file, choosing the reader by extension.
 bool loadAnyScore(Score& score, const QString& path, QString* error = nullptr, QStringList* warnings = nullptr);
 
+// Writes MusicXML 4.0: plain (.musicxml / .xml) or compressed (.mxl), by extension.
+bool exportMusicXml(const Score& score, const QString& path, QString* error = nullptr);
+
 bool isMusicXmlPath(const QString& path);
 QString openFileFilter(); // for QFileDialog
 
