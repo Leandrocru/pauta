@@ -91,6 +91,44 @@ Sequence buildSequence(const Score& score, int fromMeasure)
             return vel;
         };
 
+        // Hairpins: (start, end, +1 crescendo / -1 diminuendo), taken from the layers in time order.
+        struct Ramp { double t0, t1; int dir; };
+        std::vector<Ramp> ramps;
+        for (int v = 0; v < kVoices; ++v) {
+            double openAt = -1;
+            int openDir = 0;
+            for (int m = fromMeasure; m < nMeasures; ++m) {
+                Frac p;
+                for (const Event& e : st.measures[size_t(m)].voice(v)) {
+                    const double t0 = starts[size_t(m - fromMeasure)] + p.toDouble() * secPerWhole;
+                    p += e.duration();
+                    if (openAt >= 0 && e.hairpinEnd) {
+                        ramps.push_back({ openAt, std::max(t0, openAt + 0.01), openDir });
+                        openAt = -1;
+                    }
+                    if (e.hairpin && openAt < 0) {
+                        openAt = t0;
+                        openDir = e.hairpin == HairpinCresc ? 1 : -1;
+                    }
+                }
+            }
+        }
+        // Volume at time t, following any hairpin towards the next dynamic (or two levels up/down).
+        auto volumeAt = [&](double t) {
+            for (const Ramp& r : ramps) {
+                if (t < r.t0 || t > r.t1) continue;
+                const int from = levelAt(r.t0);
+                // Target: the next dynamic mark at (or shortly after) the end of the hairpin.
+                int to = from;
+                for (const auto& [time, v] : levels)
+                    if (time > r.t0 + 1e-6 && time <= r.t1 + 2.0) { to = v; break; }
+                if (to == from || (to - from) * r.dir < 0) to = std::clamp(from + 30 * r.dir, 15, 127);
+                const double k = (t - r.t0) / (r.t1 - r.t0);
+                return int(std::lround(from + (to - from) * k));
+            }
+            return levelAt(t);
+        };
+
         for (int v = 0; v < kVoices; ++v) {
             std::map<int, size_t> tied; // diatonic -> note still sounding through a tie
             for (int m = fromMeasure; m < nMeasures; ++m) {
@@ -105,7 +143,7 @@ Sequence buildSequence(const Score& score, int fromMeasure)
                     if (e.articulations & ArticTenuto) len = 1.0;
                     if (e.articulations & ArticStaccato) len = 0.5;
                     if (e.articulations & ArticStaccatissimo) len = 0.3;
-                    int vel = (e.dynamic == DynSFZ || e.dynamic == DynSF || e.dynamic == DynFP) ? dynamicVelocity(e.dynamic) : levelAt(start);
+                    int vel = (e.dynamic == DynSFZ || e.dynamic == DynSF || e.dynamic == DynFP) ? dynamicVelocity(e.dynamic) : volumeAt(start);
                     if (e.articulations & ArticAccent) vel += 18;
                     if (e.articulations & ArticMarcato) vel += 25;
                     vel = std::clamp(vel, 1, 127);

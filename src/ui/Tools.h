@@ -52,7 +52,7 @@ inline const std::vector<ToolInfo>& toolList()
         { Tool::SpeedyEntry, QStringLiteral("Entrada rápida"), QStringLiteral("Clique num compasso e digite: números = duração, letras = notas, Enter = acorde. F1 mostra os atalhos."), true, false },
         { Tool::HyperScribe, QStringLiteral("Teclado MIDI"), QStringLiteral("Em breve: escrever tocando num teclado MIDI."), false, false },
         { Tool::Tuplet, QStringLiteral("Quiáltera"), QStringLiteral("Em breve."), false, true },
-        { Tool::SmartShape, QStringLiteral("Linhas e ligaduras"), QStringLiteral("Em breve."), false, false },
+        { Tool::SmartShape, QStringLiteral("Linhas e ligaduras"), QStringLiteral("Escolha ligadura, crescendo ou diminuendo na paleta; clique na primeira nota e depois na última."), true, false },
         { Tool::Articulation, QStringLiteral("Articulação"), QStringLiteral("Escolha a articulação na paleta e clique nas notas (clicar de novo remove)."), true, false },
         { Tool::Expression, QStringLiteral("Expressão"), QStringLiteral("Escolha a dinâmica na paleta e clique na nota onde ela começa."), true, false },
         { Tool::Repeat, QStringLiteral("Repetição"), QStringLiteral("Em breve."), false, false },

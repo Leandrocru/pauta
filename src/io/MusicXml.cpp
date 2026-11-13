@@ -185,6 +185,7 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
          part = part.nextSiblingElement(QStringLiteral("part"))) {
         std::vector<Staff> staves(1);
         std::vector<std::vector<QString>> voiceIds(8); // per staff: MusicXML voice id of each layer
+        std::array<int, 8> pendingWedge{};             // per staff: hairpin waiting for its first note
         int divisions = 1;
         bool firstMeasure = true;
 
@@ -237,6 +238,24 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
                         if (dyn.isNull() || dyn.firstChildElement().isNull()) continue;
                         const int d = dynamicFromText(dyn.firstChildElement().tagName());
                         if (d) pendingDynamic[size_t(staffIndex(el))] = d;
+                    }
+                    // Hairpins: <wedge type="crescendo|diminuendo"> starts at the next note of the staff;
+                    // <wedge type="stop"> ends at the last note entered so far.
+                    for (QDomElement dt = el.firstChildElement(QStringLiteral("direction-type")); !dt.isNull();
+                         dt = dt.nextSiblingElement(QStringLiteral("direction-type"))) {
+                        const QDomElement wedge = dt.firstChildElement(QStringLiteral("wedge"));
+                        if (wedge.isNull()) continue;
+                        const QString type = wedge.attribute(QStringLiteral("type"));
+                        const size_t k = size_t(staffIndex(el));
+                        if (type == u"crescendo") pendingWedge[k] = HairpinCresc;
+                        else if (type == u"diminuendo") pendingWedge[k] = HairpinDim;
+                        else if (type == u"stop") {
+                            Event* last = nullptr;
+                            if (k < st.size() && !st[k].measure.events.empty()) last = &st[k].measure.events.back();
+                            else if (k < staves.size() && !staves[k].measures.empty() && !staves[k].measures.back().events.empty())
+                                last = &staves[k].measures.back().events.back();
+                            if (last) last->hairpinEnd = true;
+                        }
                     }
                     const QDomElement snd = el.firstChildElement(QStringLiteral("sound"));
                     if (!tempoSet && !snd.isNull() && snd.hasAttribute(QStringLiteral("tempo"))) {
@@ -351,6 +370,16 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
                         int& pd = pendingDynamic[size_t(staffIndex(el))];
                         if (pd && !ev.dynamic) ev.dynamic = pd;
                         pd = 0;
+                    }
+                    if (L == 0) {
+                        int& pw = pendingWedge[size_t(staffIndex(el))];
+                        if (pw) ev.hairpin = pw;
+                        pw = 0;
+                    }
+                    for (QDomElement sl = nots.firstChildElement(QStringLiteral("slur")); !sl.isNull();
+                         sl = sl.nextSiblingElement(QStringLiteral("slur"))) {
+                        if (sl.attribute(QStringLiteral("type")) == u"start") ev.slurStart = true;
+                        else if (sl.attribute(QStringLiteral("type")) == u"stop") ev.slurEnd = true;
                     }
                     layer.push_back(std::move(ev));
                     ss.filled[size_t(L)] = start + dur;

@@ -2,6 +2,18 @@
 
 Todas as mudanças de cada versão. A mais recente fica em cima.
 
+## [0.9.0] — 2026-11-13
+
+### ✨ Novidades
+- **Ligaduras de expressão** sobre várias notas.
+  - Ficam do lado oposto às hastes, sobem para passar por cima das notas do meio e se dividem em duas quando cruzam uma quebra de linha.
+  - Se alguma nota sob a ligadura tem haste para baixo, ela vai por cima.
+- **Crescendo e diminuendo** (os "grampos"), alinhados com as dinâmicas e começando depois delas.
+- **Ferramenta Linhas e ligaduras** (paleta principal): escolha o tipo e clique na primeira nota e depois na última.
+- **Na paleta (agora chamada "Expressões"):** com um trecho selecionado, os botões de ligadura, crescendo e diminuendo vão da primeira à última nota da seleção. O menu da ferramenta também remove essas linhas.
+- **Reprodução:** crescendo e diminuendo mudam o volume aos poucos até a próxima dinâmica.
+- **MusicXML:** ligaduras (`slur`) e grampos (`wedge`) passam a ser importados.
+
 ## [0.8.0] — 2026-11-12
 
 ### ✨ Novidades

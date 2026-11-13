@@ -318,7 +318,7 @@ void MainWindow::buildToolPalette()
 // cursor, and "arms" it for the Articulation / Expression tools (then a click on a note applies it).
 void MainWindow::buildMarksPalette()
 {
-    auto* dock = new QDockWidget(QStringLiteral("Articulações e dinâmicas"), this);
+    auto* dock = new QDockWidget(QStringLiteral("Expressões"), this);
     dock->setObjectName(QStringLiteral("marksPalette"));
     dock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable | QDockWidget::DockWidgetClosable);
     auto* w = new QWidget;
@@ -364,6 +364,28 @@ void MainWindow::buildMarksPalette()
         connect(a, &QAction::triggered, this, [this, d] {
             m_view->setArmedDynamic(d);
             if (m_tool != Tool::Expression) m_editor->setDynamic(d);
+            m_view->setFocus();
+        });
+        place(a);
+    }
+    // Smart shapes: slur, crescendo, diminuendo.
+    n = ((n + 2) / 3) * 3;
+    auto* shapeGroup = new QActionGroup(this);
+    const std::tuple<int, QIcon, QString> shapes[] = {
+        { 0, icons::tool(Tool::SmartShape), QStringLiteral("Ligadura de expressão") },
+        { 1, icons::hairpin(true), QStringLiteral("Crescendo") },
+        { 2, icons::hairpin(false), QStringLiteral("Diminuendo") },
+    };
+    for (const auto& [kind, icon, name] : shapes) {
+        QAction* a = new QAction(icon, name, this);
+        a->setCheckable(true);
+        a->setToolTip(QStringLiteral("%1 — com um trecho selecionado, vai da primeira à última nota; com a ferramenta Linhas e ligaduras, "
+                                     "clique na primeira nota e depois na última").arg(name));
+        shapeGroup->addAction(a);
+        if (kind == 0) a->setChecked(true);
+        connect(a, &QAction::triggered, this, [this, kind = kind] {
+            m_view->setArmedShape(kind);
+            if (m_tool != Tool::SmartShape && m_editor->selection().active) m_editor->smartShapeOnSelection(kind);
             m_view->setFocus();
         });
         place(a);
@@ -635,6 +657,13 @@ void MainWindow::rebuildToolMenu()
         if (m_tool == Tool::Articulation) {
             for (unsigned a : kArticAll)
                 m_toolMenu->addAction(articulationName(a), this, [this, a] { m_view->setArmedArticulation(a); });
+        } else if (m_tool == Tool::SmartShape) {
+            m_toolMenu->addAction(QStringLiteral("Ligadura de expressão"), this, [this] { m_view->setArmedShape(0); });
+            m_toolMenu->addAction(QStringLiteral("Crescendo"), this, [this] { m_view->setArmedShape(1); });
+            m_toolMenu->addAction(QStringLiteral("Diminuendo"), this, [this] { m_view->setArmedShape(2); });
+            m_toolMenu->addSeparator();
+            m_toolMenu->addAction(QStringLiteral("Remover linhas e ligaduras (seleção ou nota do cursor)"), this,
+                                  [this] { m_editor->clearSmartShapes(); });
         } else if (m_tool == Tool::Expression) {
             for (int d = DynPPP; d < DynCount; ++d)
                 m_toolMenu->addAction(dynamicText(d), this, [this, d] { m_view->setArmedDynamic(d); });

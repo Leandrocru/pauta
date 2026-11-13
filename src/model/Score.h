@@ -32,6 +32,12 @@ struct Event {
     bool tupletStart = false;    // first event of a tuplet group
     unsigned articulations = 0;  // Artic bit flags
     int dynamic = 0;             // Dynamic value; 0 = none
+    // Smart shapes, stored on their first and last notes (they travel with the notes when
+    // others are inserted or deleted). A start pairs with the next end in the same layer.
+    bool slurStart = false;
+    bool slurEnd = false;
+    int hairpin = 0;             // Hairpin starting here: 1 = crescendo, 2 = diminuendo
+    bool hairpinEnd = false;
 
     bool isRest() const { return pitches.empty(); }
     bool inTuplet() const { return tupletActual > 0 && tupletNormal > 0; }
@@ -53,6 +59,8 @@ constexpr unsigned kArticAll[6] = { ArticStaccato, ArticAccent, ArticTenuto, Art
 
 // Dynamic marks attached to an event (shown below the staff, used for playback volume).
 enum Dynamic : int { DynNone = 0, DynPPP, DynPP, DynP, DynMP, DynMF, DynF, DynFF, DynFFF, DynSFZ, DynSF, DynFP, DynCount };
+
+enum Hairpin : int { HairpinNone = 0, HairpinCresc = 1, HairpinDim = 2 };
 
 constexpr int kVoices = 4; // "layers" in Finale terms
 

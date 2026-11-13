@@ -210,6 +210,15 @@ void ScoreView::paintEvent(QPaintEvent* e)
         paintPage(p, m_layout, i);
         if (m_tool == Tool::SpeedyEntry) paintSpeedy(p, i);
         if (m_tool == Tool::SimpleEntry) paintGhost(p, i);
+        if (m_tool == Tool::SmartShape && m_shapeStart.valid) {
+            // Mark the first note of the shape being drawn.
+            if (const MeasureSlot* s = m_layout.slot(m_shapeStart.staff, m_shapeStart.measure); s && s->page == i) {
+                const auto& xs = s->eventX[size_t(m_shapeStart.voice)];
+                if (m_shapeStart.index < int(xs.size()))
+                    p.fillRect(QRectF(xs[size_t(m_shapeStart.index)] - 0.5 * m_layout.sp, s->staffTop - 1.5 * m_layout.sp,
+                                      2.2 * m_layout.sp, 7 * m_layout.sp), QColor(30, 150, 60, 70));
+            }
+        }
         p.restore();
     }
 }
@@ -587,6 +596,28 @@ void ScoreView::mousePressEvent(QMouseEvent* e)
             if (h.pagePt.x() < h.slot->eventX[size_t(c.voice)][k] + 1.6 * sp) { c.index = int(k); break; }
         c.diatonic = h.diatonic;
         m_ed->setCursor(c);
+        return;
+    }
+    case Tool::SmartShape: {
+        // First click: the first note; second click: the last note.
+        if (!h.slot) { m_shapeStart = {}; update(); return; }
+        const qreal sp = m_layout.sp;
+        int bestV = -1, bestK = -1;
+        qreal bestD = 1.6 * sp;
+        for (int v = 0; v < kVoices; ++v)
+            for (size_t k = 0; k < h.slot->eventX[size_t(v)].size(); ++k) {
+                const qreal d = std::abs(h.pagePt.x() - (h.slot->eventX[size_t(v)][k] + 0.6 * sp));
+                if (d < bestD) { bestD = d; bestV = v; bestK = int(k); }
+            }
+        if (bestK < 0) return;
+        if (!m_shapeStart.valid || m_shapeStart.staff != h.slot->staff || m_shapeStart.voice != bestV) {
+            m_shapeStart = { true, h.slot->staff, bestV, h.slot->measure, bestK };
+        } else {
+            m_ed->addSmartShape(m_armedShape, m_shapeStart.staff, m_shapeStart.voice, m_shapeStart.measure,
+                                m_shapeStart.index, h.slot->measure, bestK);
+            m_shapeStart = {};
+        }
+        update();
         return;
     }
     case Tool::Articulation:

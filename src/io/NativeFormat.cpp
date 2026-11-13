@@ -86,6 +86,10 @@ bool saveNative(const Score& score, const QString& path, QString* error)
                         w.writeAttribute("artic", names.join(QLatin1Char(',')));
                     }
                     if (e.dynamic) w.writeAttribute("dyn", dynamicText(e.dynamic));
+                    if (e.slurStart) w.writeAttribute("slurStart", QStringLiteral("1"));
+                    if (e.slurEnd) w.writeAttribute("slurEnd", QStringLiteral("1"));
+                    if (e.hairpin) w.writeAttribute("hairpin", e.hairpin == HairpinCresc ? QStringLiteral("cresc") : QStringLiteral("dim"));
+                    if (e.hairpinEnd) w.writeAttribute("hairpinEnd", QStringLiteral("1"));
                     if (e.inTuplet()) {
                         w.writeAttribute("tuplet", QStringLiteral("%1:%2").arg(e.tupletActual).arg(e.tupletNormal));
                         if (e.tupletStart) w.writeAttribute("tupletStart", QStringLiteral("1"));
@@ -184,6 +188,11 @@ bool loadNative(Score& out, const QString& path, QString* error)
                     for (unsigned art : kArticAll)
                         if (articulationKey(art) == name) event->articulations |= art;
                 event->dynamic = dynamicFromText(attr(a, "dyn").toString());
+                event->slurStart = attrInt(a, "slurStart", 0) != 0;
+                event->slurEnd = attrInt(a, "slurEnd", 0) != 0;
+                const QString hp = attr(a, "hairpin").toString();
+                event->hairpin = hp == u"cresc" ? HairpinCresc : hp == u"dim" ? HairpinDim : HairpinNone;
+                event->hairpinEnd = attrInt(a, "hairpinEnd", 0) != 0;
             } else if (n == u"note" && event) {
                 Pitch p;
                 const QString step = attr(a, "step").toString();

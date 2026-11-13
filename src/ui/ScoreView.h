@@ -28,6 +28,7 @@ public:
     void setPlaybackMeasure(int measure); // -1 = none
     void setArmedArticulation(unsigned a) { m_armedArtic = a; }
     void setArmedDynamic(int d) { m_armedDyn = d; }
+    void setArmedShape(int kind) { m_armedShape = kind; m_shapeStart = {}; update(); }
 
     QRectF pageRect(int page) const; // in widget pixels
     int pageAt(qreal y) const;       // page under a widget y coordinate
@@ -87,6 +88,8 @@ private:
     int m_playMeasure = -1;
     unsigned m_armedArtic = 1; // ArticStaccato
     int m_armedDyn = 5;        // DynMF
+    int m_armedShape = 0;      // 0 slur, 1 crescendo, 2 diminuendo
+    struct ShapeStart { bool valid = false; int staff = 0, voice = 0, measure = 0, index = 0; } m_shapeStart;
 
     // Mouse interaction state
     bool m_selecting = false;

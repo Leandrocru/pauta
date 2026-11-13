@@ -26,6 +26,8 @@ XML UTF-8, legível e editável à mão.
 - `tuplet="3:2"` em `<chord>`/`<rest>`: quiáltera (3 no tempo de 2); `tupletStart="1"` marca o início do grupo.
 - `artic="staccato,accent"` em `<chord>`/`<rest>`: articulações (`staccato`, `accent`, `tenuto`, `marcato`, `staccatissimo`, `fermata`).
 - `dyn="mf"` em `<chord>`/`<rest>`: dinâmica que começa nessa nota (`ppp`…`fff`, `sfz`, `sf`, `fp`).
+- `slurStart="1"` / `slurEnd="1"` em `<chord>`/`<rest>`: começo e fim de uma ligadura de expressão (o começo se liga ao próximo fim na mesma camada).
+- `hairpin="cresc|dim"` / `hairpinEnd="1"`: começo e fim de crescendo/diminuendo.
 - `tie="1"` em `<note>`: ligadura de valor com a mesma nota no próximo evento da pauta.
 - `alter` em `<note>`: -2..2 (bemol duplo … sustenido duplo). A nota escrita é
   sempre explícita; a armadura só decide quais acidentes aparecem.

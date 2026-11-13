@@ -405,6 +405,89 @@ void Editor::toggleArticulation(unsigned artic)
     });
 }
 
+namespace {
+const char* shapeName(int kind) { return kind == 0 ? "Ligadura de expressão" : kind == 1 ? "Crescendo" : "Diminuendo"; }
+}
+
+void Editor::addSmartShape(int kind, int staff, int voice, int m0, int i0, int m1, int i1)
+{
+    if (std::make_pair(m1, i1) < std::make_pair(m0, i0)) {
+        std::swap(m0, m1);
+        std::swap(i0, i1);
+    }
+    if (m0 == m1 && i0 == i1) {
+        emit message(QStringLiteral("Escolha duas notas diferentes: a primeira e a última."));
+        return;
+    }
+    mutate(QString::fromUtf8(shapeName(kind)), [&] {
+        if (staff < 0 || staff >= int(m_score.staves.size())) return false;
+        auto& ms = m_score.staves[size_t(staff)].measures;
+        if (m1 >= int(ms.size())) return false;
+        auto& a = ms[size_t(m0)].voice(voice);
+        auto& b = ms[size_t(m1)].voice(voice);
+        if (i0 >= int(a.size()) || i1 >= int(b.size())) return false;
+        if (kind == 0) {
+            a[size_t(i0)].slurStart = true;
+            b[size_t(i1)].slurEnd = true;
+        } else {
+            a[size_t(i0)].hairpin = kind;
+            b[size_t(i1)].hairpinEnd = true;
+        }
+        return true;
+    });
+}
+
+void Editor::smartShapeOnSelection(int kind)
+{
+    if (!m_sel.active) {
+        emit message(QStringLiteral("Selecione um trecho (ferramenta Seleção) ou use a ferramenta Linhas e ligaduras."));
+        return;
+    }
+    const int v = m_cursor.voice;
+    mutate(QString::fromUtf8(shapeName(kind)), [&] {
+        bool any = false;
+        for (int s = m_sel.staff0; s <= m_sel.staff1; ++s) {
+            auto& ms = m_score.staves[size_t(s)].measures;
+            Event* first = nullptr;
+            Event* last = nullptr;
+            for (int m = m_sel.measure0; m <= m_sel.measure1; ++m)
+                for (Event& e : ms[size_t(m)].voice(v)) {
+                    if (e.isRest() && kind == 0) continue; // slurs go from note to note
+                    if (!first) first = &e;
+                    last = &e;
+                }
+            if (!first || first == last) continue;
+            if (kind == 0) { first->slurStart = true; last->slurEnd = true; }
+            else { first->hairpin = kind; last->hairpinEnd = true; }
+            any = true;
+        }
+        if (!any) emit message(QStringLiteral("A seleção precisa ter pelo menos duas notas na camada atual."));
+        return any;
+    });
+}
+
+void Editor::clearSmartShapes()
+{
+    mutate(QStringLiteral("Remover linhas e ligaduras"), [&] {
+        auto clear = [](Event& e) {
+            const bool had = e.slurStart || e.slurEnd || e.hairpin || e.hairpinEnd;
+            e.slurStart = e.slurEnd = e.hairpinEnd = false;
+            e.hairpin = 0;
+            return had;
+        };
+        bool any = false;
+        if (m_sel.active) {
+            for (int s = m_sel.staff0; s <= m_sel.staff1; ++s)
+                for (int m = m_sel.measure0; m <= m_sel.measure1; ++m)
+                    for (int v = 0; v < kVoices; ++v)
+                        for (Event& e : m_score.staves[size_t(s)].measures[size_t(m)].voice(v)) any |= clear(e);
+            return any;
+        }
+        Event* e = targetEvent();
+        return e && clear(*e);
+    });
+}
+
 void Editor::setDynamic(int dynamic)
 {
     mutate(dynamic ? dynamicText(dynamic) : QStringLiteral("Remover dinâmica"), [&] {

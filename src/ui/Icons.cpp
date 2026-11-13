@@ -59,6 +59,25 @@ QIcon finish(QPixmap& pm) { return QIcon(pm); }
 
 } // namespace
 
+QIcon hairpin(bool crescendo)
+{
+    QPixmap pm(kSize, kSize);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setPen(QPen(kInk, 3, Qt::SolidLine, Qt::RoundCap));
+    const qreal a = 6, b = kSize - 6, c = kSize / 2.0, o = 11;
+    if (crescendo) {
+        p.drawLine(QPointF(a, c), QPointF(b, c - o));
+        p.drawLine(QPointF(a, c), QPointF(b, c + o));
+    } else {
+        p.drawLine(QPointF(a, c - o), QPointF(b, c));
+        p.drawLine(QPointF(a, c + o), QPointF(b, c));
+    }
+    p.end();
+    return QIcon(pm);
+}
+
 QIcon dynamic(const QString& text)
 {
     const auto& font = smufl::Font::instance();

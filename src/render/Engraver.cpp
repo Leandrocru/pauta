@@ -325,6 +325,8 @@ public:
         m_layout.sp = opt.sp;
         m_headW = m_font.advance(smufl::NoteheadBlack, m_sp);
         m_pendingTies.resize(score.staves.size() * kVoices);
+        m_slurs.resize(score.staves.size() * kVoices);
+        m_hairpins.resize(score.staves.size() * kVoices);
     }
 
     Layout run();
@@ -360,6 +362,31 @@ private:
         qreal systemEndX = 0;
     };
     std::vector<std::vector<PendingTie>> m_pendingTies; // per staff and layer
+
+    // Smart shapes waiting for their last note (per staff and layer).
+    struct PendingSlur {
+        bool active = false;
+        qreal x = 0, y = 0;
+        bool above = true;
+        int page = 0;
+        qreal staffTop = 0, systemEndX = 0;
+        qreal extreme = 0; // most outward point of the notes it spans (on its side)
+    };
+    struct PendingHairpin {
+        bool active = false;
+        int type = 0;
+        qreal x = 0;
+        int page = 0;
+        qreal staffTop = 0, systemEndX = 0;
+    };
+    std::vector<PendingSlur> m_slurs;
+    std::vector<PendingHairpin> m_hairpins;
+    void handleShapes(int page, int staff, int voice, int measure, int index, const Event& e, const EventInfo& info,
+                      qreal x, qreal staffTop, qreal systemStartX, qreal systemEndX);
+    bool slurGoesAbove(int staff, int voice, int measure, int index) const;
+    void drawSlur(int page, qreal x0, qreal y0, qreal x1, qreal y1, bool above, qreal extreme);
+    void drawHairpin(int page, int type, qreal x0, qreal x1, qreal staffTop);
+    qreal dynamicWidth(int dynamic) const;
     void drawMeasureRest(PageLayout& pg, qreal x0, qreal x1, qreal staffTop);
 
     void glyph(PageLayout& pg, char16_t cp, qreal x, qreal y)
@@ -606,6 +633,147 @@ void Builder::drawBeamGroup(PageLayout& pg, const std::vector<Event>& evs, const
                 else quad(sx[i] - len, sx[i] + stemW / 2, level);
             }
         }
+    }
+}
+
+qreal Builder::dynamicWidth(int dynamic) const
+{
+    static const QString letters = QStringLiteral("pmfrsz");
+    static const char16_t cps[6] = { 0xE520, 0xE521, 0xE522, 0xE523, 0xE524, 0xE525 };
+    qreal w = 0;
+    for (QChar c : dynamicText(dynamic)) {
+        const int i = letters.indexOf(c);
+        if (i >= 0) w += m_font.advance(cps[i], m_sp) - 0.08 * m_sp;
+    }
+    return w;
+}
+
+void Builder::drawSlur(int pageIdx, qreal x0, qreal y0, qreal x1, qreal y1, bool above, qreal extreme)
+{
+    const qreal sp = m_sp;
+    if (x1 - x0 < sp) x1 = x0 + sp;
+    const qreal len = x1 - x0;
+    const qreal dir = above ? -1.0 : 1.0;
+    // Height: grows with the length, and is enough to clear the notes in between.
+    qreal h = std::clamp(len * 0.1, 1.2 * sp, 3.5 * sp);
+    const qreal mid = (y0 + y1) / 2;
+    const qreal need = above ? (mid - extreme) + 0.6 * sp : (extreme - mid) + 0.6 * sp;
+    h = std::max(h, need / 0.75);
+    h = std::min(h, 6.0 * sp);
+    const qreal t = 0.22 * sp; // thickness in the middle
+    QPainterPath path;
+    path.moveTo(x0, y0);
+    path.cubicTo(x0 + len * 0.25, y0 + dir * h, x1 - len * 0.25, y1 + dir * h, x1, y1);
+    path.cubicTo(x1 - len * 0.25, y1 + dir * (h - t), x0 + len * 0.25, y0 + dir * (h - t), x0, y0);
+    path.closeSubpath();
+    page(pageIdx).fills.push_back(path);
+}
+
+void Builder::drawHairpin(int pageIdx, int type, qreal x0, qreal x1, qreal staffTop)
+{
+    const qreal sp = m_sp;
+    if (x1 - x0 < 1.5 * sp) x1 = x0 + 1.5 * sp;
+    const qreal yc = staffTop + 4 * sp + 2.6 * sp; // level with the dynamics
+    const qreal open = 0.65 * sp;
+    PageLayout& pg = page(pageIdx);
+    if (type == HairpinCresc) {
+        line(pg, x0, yc, x1, yc - open, 0.12);
+        line(pg, x0, yc, x1, yc + open, 0.12);
+    } else {
+        line(pg, x0, yc - open, x1, yc, 0.12);
+        line(pg, x0, yc + open, x1, yc, 0.12);
+    }
+}
+
+// A slur goes above unless every stemmed note under it has its stem up (then it goes below).
+bool Builder::slurGoesAbove(int staff, int voice, int measure, int index) const
+{
+    bool sawStem = false;
+    for (int mm = measure; mm < m_score.measureCount(); ++mm) {
+        const auto& evs = m_score.staves[size_t(staff)].measures[size_t(mm)].voice(voice);
+        const auto& infos = m_spacing[size_t(mm)].staves[size_t(staff)].v[size_t(voice)].events;
+        for (size_t i = (mm == measure ? size_t(index) : 0); i < evs.size(); ++i) {
+            if (!evs[i].isRest() && evs[i].durLog >= 1) {
+                if (!infos[i].stemUp) return true;
+                sawStem = true;
+            }
+            if (evs[i].slurEnd && !(mm == measure && int(i) == index)) return !sawStem;
+        }
+    }
+    return !sawStem;
+}
+
+void Builder::handleShapes(int pageIdx, int staff, int voice, int measure, int index, const Event& e, const EventInfo& info,
+                           qreal x, qreal staffTop, qreal systemStartX, qreal systemEndX)
+{
+    const qreal sp = m_sp;
+    const qreal headW = m_font.advance(e.isRest() ? smufl::restFor(e.durLog) : smufl::noteheadFor(e.durLog), sp);
+    const size_t key = size_t(staff * kVoices + voice);
+    const bool stem = !e.isRest() && e.durLog >= 1;
+
+    // Where a slur attaches to this note: next to the notehead, or past the stem when the
+    // stem is on the slur's side.
+    auto attachY = [&](bool above) {
+        if (e.isRest()) return y(staffTop, above ? 4 : -4) + (above ? -sp : sp);
+        if (above) {
+            const qreal top = y(staffTop, info.pos.back());
+            return stem && info.stemUp ? top - kStemLen * sp - 0.4 * sp : top - 1.0 * sp;
+        }
+        const qreal bottom = y(staffTop, info.pos.front());
+        return stem && !info.stemUp ? bottom + kStemLen * sp + 0.4 * sp : bottom + 1.0 * sp;
+    };
+
+    // ---- slur ----
+    PendingSlur& sl = m_slurs[key];
+    if (sl.active && e.slurEnd) {
+        const qreal ex = x + headW / 2;
+        const qreal ey = attachY(sl.above);
+        if (sl.page == pageIdx && qFuzzyCompare(sl.staffTop, staffTop)) {
+            drawSlur(pageIdx, sl.x, sl.y, ex, ey, sl.above, sl.extreme);
+        } else {
+            // Broken by a system break: one piece to the end of the first system, one from the start of the next.
+            drawSlur(sl.page, sl.x, sl.y, sl.systemEndX - 0.5 * sp, sl.y, sl.above, sl.y);
+            drawSlur(pageIdx, systemStartX - 0.5 * sp, ey, ex, ey, sl.above, ey);
+        }
+        sl.active = false;
+    } else if (sl.active) {
+        // A note under the slur pushes it outward.
+        if (sl.page == pageIdx && qFuzzyCompare(sl.staffTop, staffTop)) {
+            const qreal yy = attachY(sl.above);
+            sl.extreme = sl.above ? std::min(sl.extreme, yy) : std::max(sl.extreme, yy);
+        }
+    }
+    if (e.slurStart && !sl.active) {
+        sl.active = true;
+        sl.above = slurGoesAbove(staff, voice, measure, index);
+        sl.x = x + headW / 2;
+        sl.y = attachY(sl.above);
+        sl.extreme = sl.y;
+        sl.page = pageIdx;
+        sl.staffTop = staffTop;
+        sl.systemEndX = systemEndX;
+    }
+
+    // ---- hairpin ----
+    PendingHairpin& hp = m_hairpins[key];
+    if (hp.active && e.hairpinEnd) {
+        const qreal endX = e.dynamic ? x - 0.8 * sp : x + headW;
+        if (hp.page == pageIdx && qFuzzyCompare(hp.staffTop, staffTop)) {
+            drawHairpin(pageIdx, hp.type, hp.x, endX, staffTop);
+        } else {
+            drawHairpin(hp.page, hp.type, hp.x, hp.systemEndX - 1.0 * sp, hp.staffTop);
+            drawHairpin(pageIdx, hp.type, systemStartX, endX, staffTop);
+        }
+        hp.active = false;
+    }
+    if (e.hairpin && !hp.active) {
+        hp.active = true;
+        hp.type = e.hairpin;
+        // Start after this note's dynamic mark, if it has one.
+        hp.x = e.dynamic ? x - 0.4 * sp + dynamicWidth(e.dynamic) + 0.6 * sp : x;
+        hp.page = pageIdx;
+        hp.staffTop = staffTop;
+        hp.systemEndX = systemEndX;
     }
 }
 
@@ -869,6 +1037,7 @@ void Builder::drawSystem(const System& sys, int pageIdx, qreal left, qreal top, 
                     drawEvent(pg, evs[k], info, ex, st, info.beamGroup >= 0);
                     drawMarks(pg, evs[k], info, ex, st);
                     handleTies(pageIdx, s, v, evs[k], info, ex, st, left + sys.headerW, xEnd);
+                    handleShapes(pageIdx, s, v, m, int(k), evs[k], info, ex, st, left + sys.headerW, xEnd);
                     xs.push_back(ex);
                 }
                 for (const std::vector<int>& group : vi.beams) drawBeamGroup(pg, evs, vi, group, xs, st);
@@ -993,7 +1162,7 @@ Layout Builder::run()
                     if (le[k].pos.empty()) continue;
                     const bool stem = lower.voice(v)[k].durLog >= 1 && !le[k].stemUp;
                     bottom = std::min(bottom, le[k].pos.front() - (stem ? 7 : 1));
-                    if (lower.voice(v)[k].dynamic) bottom = std::min(bottom, std::min(-10, le[k].pos.front() - 9));
+                    if (lower.voice(v)[k].dynamic || lower.voice(v)[k].hairpin) bottom = std::min(bottom, std::min(-10, le[k].pos.front() - 9));
                 }
             }
         }
