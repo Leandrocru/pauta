@@ -12,13 +12,13 @@ Interface e mensagens em **português do Brasil**. Comentários no código em in
 - Roteiro em `docs/ROADMAP.md` (marque o que concluir). Formato `.pauta` em `docs/FORMATO.md`.
 
 ## Arquitetura (`src/`)
-- `model/` — `Score → Staff → Measure → Event(pitches|rest)`; fórmula/tonalidade/clave do início + mapas de mudanças por compasso (`timeAt`, `keyAt`, `clefAt`, `capacityAt` — use sempre estes, nunca `time`/`keyFifths`/`clef` direto); inserir/remover compassos com `Score::insertMeasures/removeMeasures`; `Measure` tem 4 camadas (`events` = camada 1, `voice(v)` acessa qualquer uma); utilitários de altura/clave/armadura.
-- `render/Engraver` — função pura `Score → Layout` (espaçamento, sistemas, páginas, primitivas por página).
+- `model/` — `Score → Staff → Measure → Event(pitches|rest)`; fórmula/tonalidade/clave do início + mapas de mudanças por compasso (`timeAt`, `keyAt`, `clefAt`, `capacityAt` — use sempre estes, nunca `time`/`keyFifths`/`clef` direto); inserir/remover compassos com `Score::insertMeasures/removeMeasures`; `Measure` tem 4 camadas (`events` = camada 1, `voice(v)` acessa qualquer uma); utilitários de altura/clave/armadura. Repetições/casas/saltos ficam em `Score::marks` (por compasso, `marksAt`); a ordem de reprodução vem de `Score::playOrder()`. Instrumentos = `Score::parts()` (pauta com nome + pautas sem nome seguintes).
+- `render/Engraver` — função pura `Score → Layout` (espaçamento, sistemas, páginas, primitivas por página). `EngraveOptions::part` grava uma parte (só as pautas do instrumento, com `MeasureSlot::staff` remapeado para a grade) e `multiRests` junta compassos vazios.
 - `render/Renderer` — pinta um `PageLayout` (glifos em um único `QGlyphRun`), exporta PDF/PNG.
 - `edit/Editor` — cursor, entrada estilo Speedy Entry, desfazer por snapshot (`QUndoStack`).
 - `ui/` — `MainWindow` (menus, paletas, barra de navegação), `ScoreView` (só pinta páginas visíveis; mouse e teclado conforme a ferramenta), `Tools.h` (lista de ferramentas), `Icons` (ícones próprios desenhados em tempo de execução), `LaunchDialog`, `NewScoreDialog`.
 - Interface: organização inspirada no Finale, mas ícones e arte são próprios (nunca copiar os do Finale).
-- `playback/` — `Sequence` (Score → mensagens MIDI com tempo; ligaduras viram uma nota só), `Player` (timer de 4 ms), `MidiOut` (Windows: WinMM/GS Wavetable; Linux: `SoftSynth`, sintetizador de tabela de onda via ALSA). Teste sem som: `--playback-check [arquivo]`.
+- `playback/` — `Sequence` (Score → mensagens MIDI com tempo; ligaduras viram uma nota só), `Player` (timer de 4 ms), `MidiOut` (Windows: WinMM/GS Wavetable; Linux: `SoftSynth`, sintetizador de tabela de onda via ALSA), `MidiIn` (teclado MIDI: WinMM / sequenciador ALSA; acordes = teclas tocadas juntas, entram na Entrada rápida). Teste sem som: `--playback-check [arquivo]`.
 - `io/NativeFormat` — leitura/gravação do `.pauta` (XML).
 - `io/MusicXmlExport` — exportação MusicXML 4.0 (`--export-musicxml arquivo`). O CI faz ida e volta (exporta, reimporta, compara a imagem) e valida contra o XSD oficial (`tools/validate-musicxml.py`).
 - `io/MusicXml` — importação MusicXML (partwise; `.mxl` via `QZipReader` privado do Qt). Cada voz MusicXML de uma pauta vira uma camada (até 4; mapeamento fixo por parte) e avisa o que simplificou. Arquivo de teste: `tests/data/piano-teste.musicxml` (+ `.mxl`), usado também no CI.
@@ -48,5 +48,7 @@ QT_QPA_PLATFORM=offscreen ./build/pauta --empty --test-keys "C D E F 4 G + Retur
 # --tool N escolhe a ferramenta (índice em ui/Tools.h; 0 Seleção, 8 Entrada simples, 9 Entrada rápida),
 # --scroll-view liga a visualização contínua, --select-all seleciona tudo.
 # --test-mouse "click:1:fim:35 move:1:0:39" simula o mouse (compasso:fim ou índice da nota:altura diatônica).
+# --menu-action "Ritornelo de fim" aciona um item de menu; --grab-dialog d.png captura e confirma a janela que abrir;
+# --part N mostra/exporta a parte N; --midi-notes "60+64+67 62" simula o teclado MIDI (Repetição = ferramenta 15).
 ```
 Olhe as imagens geradas para conferir a gravação. No Windows, ponha `C:\Qt\6.11.3\msvc2022_64\bin` no PATH.

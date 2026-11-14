@@ -42,9 +42,11 @@ Cada etapa termina com um programa utilizável.
 
 ## Etapa 4 — Ferramentas no estilo Finale
 - [x] Ferramentas Expressão, Articulação, Letra (estrofes, hífens, melismas) e Cifra
-- [ ] Ferramenta Repetição (ritornelos, casas de 1ª/2ª vez, D.C./D.S.)
-- [ ] Partes extraídas vinculadas à grade
-- [ ] HyperScribe-like: entrada por teclado MIDI
+- [x] Ferramenta Repetição (ritornelos, casas de 1ª/2ª vez, D.C./D.S., Coda, Fine), seguida na reprodução
+- [x] Partes extraídas vinculadas à grade, com pausas de vários compassos
+- [ ] Layout próprio de cada parte (quebras de linha e página editáveis por parte)
+- [x] Entrada por teclado MIDI (passo a passo, na Entrada rápida)
+- [ ] HyperScribe em tempo real (tocar com metrônomo e transcrever o ritmo)
 - [ ] Simple Entry com paleta completa
 
 ## Etapa 5 — Mais formatos

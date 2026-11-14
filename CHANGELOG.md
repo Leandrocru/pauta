@@ -2,6 +2,27 @@
 
 Todas as mudanças de cada versão. A mais recente fica em cima.
 
+## [0.13.0] — 2026-11-13
+
+### ✨ Novidades
+- **Ferramenta Repetição:**
+  - **Clique num compasso:** abre uma janela com ritornelo de início e de fim (e quantas vezes repete), casa de 1ª/2ª vez, Segno, Coda, instrução no fim do compasso (Fine, D.C., D.S., D.C./D.S. al Fine ou al Coda, To Coda) e barra dupla ou final.
+  - **Clique rápido:** o menu **Repetição** tem cada sinal. Escolha um e clique nos compassos para pôr ou tirar.
+  - **Seleção:** **Repetir compassos selecionados** põe |: e :| em volta da seleção.
+  - **Reprodução:** segue as repetições, as casas e os saltos na ordem certa.
+  - **MusicXML:** as repetições são importadas e exportadas.
+- **Partes ligadas à grade:**
+  - **Escolher a parte:** use **Ver** na barra de baixo ou **Documento → Editar parte**.
+  - **Ligação:** a parte mostra só aquele instrumento, com o nome no alto. O que você muda na parte muda a grade, e vice-versa.
+  - **Pausas de vários compassos:** compassos vazios seguidos viram uma pausa só, com o número em cima.
+  - **PDF e impressão:** **Exportar → PDF** e **Imprimir** saem como está na tela (grade ou parte).
+  - **Todas as partes:** **Exportar → Partes em PDF** cria um arquivo para cada instrumento.
+- **Teclado MIDI:**
+  - **Ligar:** ligue o teclado e escolha-o em **MIDI/Áudio → Teclado MIDI (entrada)**, ou clique na ferramenta **Teclado MIDI**.
+  - **Escrever:** na **Entrada rápida**, cada nota tocada entra no cursor com a duração escolhida. Teclas tocadas juntas viram acorde, e ♯/♭ seguem a armadura.
+  - **Som:** as notas soam no computador com o instrumento da pauta.
+  - **Lembrar:** o teclado escolhido fica guardado para a próxima vez.
+
 ## [0.12.0] — 2026-11-13
 
 ### ✨ Novidades

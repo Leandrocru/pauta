@@ -27,6 +27,9 @@ o maior número possível de formatos de partitura.
 - Reprodução (Espaço): usa o sintetizador do próprio Windows (piano, cordas, sopros, coro conforme o nome da pauta); no Linux, um sintetizador interno
 - Letra (várias estrofes, hífens e linhas de melisma) e cifras (C, F#m7b5, G/B…) com ♯/♭ de verdade; as pautas se afastam sozinhas para dar espaço
 - Até 4 camadas (vozes) por pauta, como no Finale: Alt+1–4 ou o seletor "Camada" na barra inferior
+- Repetições: ritornelos, casas de 1ª/2ª vez, Segno, Coda, Fine, D.C. e D.S. (a reprodução segue a ordem certa)
+- Partes de cada instrumento ligadas à grade (o que muda na parte muda na grade), com pausas de vários compassos e exportação de todas as partes em PDF
+- Teclado MIDI: toque as notas e acordes e eles entram na Entrada rápida
 - Importa e exporta MusicXML (`.musicxml`, `.mxl` compactado e `.xml`): leva e traz partituras do Finale, Sibelius, MuseScore e Dorico
 
 ## Instalar (sem terminal)

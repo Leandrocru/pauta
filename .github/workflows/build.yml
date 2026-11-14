@@ -58,6 +58,7 @@ jobs:
           ./build/Pauta.exe --playback-check tests/data/ligaduras.musicxml
           ./build/Pauta.exe --playback-check tests/data/mudancas.musicxml
           ./build/Pauta.exe --playback-check tests/data/letra-cifras.musicxml
+          ./build/Pauta.exe --playback-check tests/data/repeticoes.musicxml
           ./build/Pauta.exe --export-png mx.png tests/data/piano-teste.musicxml
           ./build/Pauta.exe --export-png mxl.png tests/data/piano-teste.mxl
           if (-not (Test-Path demo.pdf) -or -not (Test-Path mx.png) -or -not (Test-Path mxl.png)) { exit 1 }
@@ -114,6 +115,7 @@ jobs:
           ./build/pauta --playback-check tests/data/ligaduras.musicxml
           ./build/pauta --playback-check tests/data/mudancas.musicxml
           ./build/pauta --playback-check tests/data/letra-cifras.musicxml
+          ./build/pauta --playback-check tests/data/repeticoes.musicxml
 
       - name: MusicXML — ida e volta e validação pelo esquema oficial
         env:
