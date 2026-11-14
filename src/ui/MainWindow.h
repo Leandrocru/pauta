@@ -3,6 +3,8 @@
 
 #include <QMainWindow>
 
+#include <vector>
+
 class QActionGroup;
 class QComboBox;
 class QLabel;
@@ -15,12 +17,13 @@ namespace pauta {
 
 class Editor;
 class ScoreView;
-namespace playback { class Player; }
+namespace playback { class Player; class MidiIn; }
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
     void showPart(int part); // -1 = full score
+    playback::MidiIn* midiIn() const { return m_midiIn; }
     explicit MainWindow(QWidget* parent = nullptr);
     bool openFile(const QString& path);
     Editor* editor() const { return m_editor; }
@@ -84,6 +87,14 @@ private:
     QComboBox* m_zoomBox = nullptr;
     QActionGroup* m_layerGroup = nullptr;
     playback::Player* m_player = nullptr;
+    // MIDI keyboard: notes held together form one chord, entered when all keys are released.
+    playback::MidiIn* m_midiIn = nullptr;
+    std::vector<int> m_midiPending;
+    std::vector<int> m_midiHeld;
+    bool m_midiEntry = true; // Speedy Entry takes pitches from the MIDI keyboard
+    void chooseMidiInput();
+    void onMidiNoteOn(int pitch, int velocity);
+    void onMidiNoteOff(int pitch);
     QAction* m_playAction = nullptr;
     QSpinBox* m_tempoBox = nullptr;
     QComboBox* m_partBox = nullptr; // "Ver": full score or one part

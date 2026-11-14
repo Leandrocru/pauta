@@ -22,6 +22,7 @@ public:
     bool isPlaying() const { return m_timer.isActive(); }
 
     void play(const Score& score, int fromMeasure);
+    void sendNow(uint8_t status, uint8_t data1, uint8_t data2) { out().send(status, data1, data2); } // MIDI thru
     void stop();
 
 signals:

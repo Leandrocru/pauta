@@ -35,6 +35,8 @@ qt_add_executable(Pauta WIN32
     src/playback/Sequence.cpp
     src/playback/MidiOut.h
     src/playback/MidiOut.cpp
+    src/playback/MidiIn.h
+    src/playback/MidiIn.cpp
     src/playback/Player.h
     src/playback/Player.cpp
     src/update/Updater.h

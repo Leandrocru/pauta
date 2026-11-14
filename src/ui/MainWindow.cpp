@@ -1,6 +1,7 @@
 #include "ui/MainWindow.h"
 
 #include "edit/Editor.h"
+#include "playback/MidiIn.h"
 #include "playback/Player.h"
 #include "io/MusicXml.h"
 #include "io/NativeFormat.h"
@@ -13,11 +14,14 @@
 #include "ui/ScoreView.h"
 #include "update/Updater.h"
 
+#include <algorithm>
+
 #include <QAction>
 #include <QActionGroup>
 #include <QApplication>
 #include <QCloseEvent>
 #include <QComboBox>
+#include <QPushButton>
 #include <QDir>
 #include <QRegularExpression>
 #include <QSignalBlocker>
@@ -65,6 +69,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 {
     m_editor = new Editor(this);
     m_player = new playback::Player(this);
+    m_midiIn = new playback::MidiIn(this);
+    connect(m_midiIn, &playback::MidiIn::noteOn, this, &MainWindow::onMidiNoteOn);
+    connect(m_midiIn, &playback::MidiIn::noteOff, this, &MainWindow::onMidiNoteOff);
+    m_midiEntry = QSettings().value(QStringLiteral("midi/speedy"), true).toBool();
+    if (const QString dev = QSettings().value(QStringLiteral("midi/input")).toString(); !dev.isEmpty()) m_midiIn->open(dev);
     m_view = new ScoreView(m_editor);
     m_scroll = new QScrollArea;
     m_scroll->setWidget(m_view);
@@ -256,7 +265,7 @@ void MainWindow::buildMenus()
                                      ? QStringLiteral("O Pauta toca usando: <b>%1</b>.").arg(m_player->outputName())
                                      : QStringLiteral("Nenhuma saída de som disponível: %1").arg(m_player->outputName()));
     });
-    disabledAction(midi, QStringLiteral("Configurar dispositivo MIDI…"));
+    midi->addAction(QStringLiteral("Teclado &MIDI (entrada)…"), this, &MainWindow::chooseMidiInput);
     disabledAction(midi, QStringLiteral("Banco de sons (SoundFont)…"));
 
     QMenu* plugins = menuBar()->addMenu(QStringLiteral("&Plug-ins"));
@@ -632,6 +641,14 @@ void MainWindow::buildNavigationBar()
 void MainWindow::setTool(Tool t)
 {
     if (!toolInfo(t).available) t = Tool::SpeedyEntry;
+    if (t == Tool::HyperScribe) {
+        // "Teclado MIDI": Speedy Entry with pitches from the MIDI keyboard.
+        t = Tool::SpeedyEntry;
+        m_midiEntry = true;
+        QSettings().setValue(QStringLiteral("midi/speedy"), true);
+        if (!m_midiIn->isOpen()) QTimer::singleShot(0, this, &MainWindow::chooseMidiInput);
+        else statusBar()->showMessage(QStringLiteral("Toque no teclado MIDI (%1): as notas entram no cursor.").arg(m_midiIn->deviceName()), 5000);
+    }
     m_tool = t;
     m_view->setTool(t);
     for (QAction* a : m_toolGroup->actions())
@@ -719,7 +736,16 @@ void MainWindow::rebuildToolMenu()
         m_toolMenu->addAction(QStringLiteral("Atalhos de teclado…"), this, &MainWindow::showShortcuts);
         m_toolMenu->addSeparator();
         for (QAction* a : m_layerGroup->actions()) m_toolMenu->addAction(a);
-        disabledAction(m_toolMenu, QStringLiteral("Usar teclado MIDI para a altura"));
+        {
+            QAction* a = m_toolMenu->addAction(QStringLiteral("Usar teclado MIDI para a altura"));
+            a->setCheckable(true);
+            a->setChecked(m_midiEntry);
+            connect(a, &QAction::toggled, this, [this](bool on) {
+                m_midiEntry = on;
+                QSettings().setValue(QStringLiteral("midi/speedy"), on);
+            });
+            m_toolMenu->addAction(QStringLiteral("Escolher teclado MIDI…"), this, &MainWindow::chooseMidiInput);
+        }
         break;
     default:
         if (m_tool == Tool::Articulation) {
@@ -1097,6 +1123,81 @@ void MainWindow::exportPdf()
         QMessageBox::warning(this, QStringLiteral("Erro"), QStringLiteral("Não foi possível criar o PDF."));
     else
         statusBar()->showMessage(QStringLiteral("PDF exportado: %1").arg(path), 4000);
+}
+
+void MainWindow::chooseMidiInput()
+{
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("Teclado MIDI"));
+    auto* form = new QFormLayout(&dlg);
+    auto* box = new QComboBox;
+    auto fill = [this, box] {
+        box->clear();
+        box->addItem(QStringLiteral("Nenhum"));
+        box->addItems(playback::MidiIn::devices());
+        const int cur = box->findText(m_midiIn->deviceName());
+        box->setCurrentIndex(cur > 0 ? cur : (box->count() > 1 && !m_midiIn->isOpen() ? 1 : 0));
+    };
+    fill();
+    auto* refresh = new QPushButton(QStringLiteral("Procurar de novo"));
+    connect(refresh, &QPushButton::clicked, &dlg, fill);
+    auto* row = new QHBoxLayout;
+    row->addWidget(box, 1);
+    row->addWidget(refresh);
+    form->addRow(QStringLiteral("Entrada:"), row);
+    form->addRow(new QLabel(QStringLiteral(
+        "<small>Ligue o teclado (USB ou interface MIDI) antes de abrir esta janela.<br>"
+        "Na <b>Entrada rápida</b>, cada nota tocada entra no cursor com a duração escolhida;<br>"
+        "teclas tocadas juntas viram um acorde. As notas também soam no computador.</small>")));
+    auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    form->addRow(bb);
+    if (dlg.exec() != QDialog::Accepted) return;
+    if (box->currentIndex() <= 0) {
+        m_midiIn->close();
+        QSettings().remove(QStringLiteral("midi/input"));
+        statusBar()->showMessage(QStringLiteral("Teclado MIDI desligado."), 4000);
+        return;
+    }
+    const QString dev = box->currentText();
+    if (m_midiIn->open(dev)) {
+        QSettings().setValue(QStringLiteral("midi/input"), dev);
+        statusBar()->showMessage(QStringLiteral("Teclado MIDI: %1. Use a Entrada rápida e toque as notas.").arg(dev), 5000);
+    } else {
+        QMessageBox::warning(this, QStringLiteral("Teclado MIDI"),
+                             QStringLiteral("Não foi possível abrir \"%1\". Ele pode estar em uso por outro programa.").arg(dev));
+    }
+}
+
+void MainWindow::onMidiNoteOn(int pitch, int velocity)
+{
+    // Thru: the note sounds with the instrument of the cursor's staff (channel 16).
+    const Score& s = m_editor->score();
+    const int staff = std::clamp(m_editor->cursor().staff, 0, int(s.staves.size()) - 1);
+    QString instrument;
+    for (const PartRange& pr : s.parts())
+        if (pr.contains(staff)) instrument = pr.name;
+    m_player->sendNow(0xCF, uint8_t(playback::gmProgramFor(instrument)), 0);
+    m_player->sendNow(0x9F, uint8_t(pitch), uint8_t(velocity));
+
+    if (m_tool != Tool::SpeedyEntry || !m_midiEntry || m_player->isPlaying()) return;
+    if (std::find(m_midiHeld.begin(), m_midiHeld.end(), pitch) == m_midiHeld.end()) m_midiHeld.push_back(pitch);
+    if (std::find(m_midiPending.begin(), m_midiPending.end(), pitch) == m_midiPending.end()) m_midiPending.push_back(pitch);
+}
+
+void MainWindow::onMidiNoteOff(int pitch)
+{
+    m_player->sendNow(0x8F, uint8_t(pitch), 0);
+    m_midiHeld.erase(std::remove(m_midiHeld.begin(), m_midiHeld.end(), pitch), m_midiHeld.end());
+    if (!m_midiHeld.empty() || m_midiPending.empty()) return;
+    // All keys released: the notes played together become one note or chord.
+    const int key = m_editor->score().keyAt(m_editor->cursor().measure);
+    std::vector<Pitch> pitches;
+    std::sort(m_midiPending.begin(), m_midiPending.end());
+    for (int p : m_midiPending) pitches.push_back(pitchFromMidi(p, key));
+    m_midiPending.clear();
+    if (m_tool == Tool::SpeedyEntry && m_midiEntry) m_editor->enterPitches(std::move(pitches));
 }
 
 void MainWindow::refreshParts()

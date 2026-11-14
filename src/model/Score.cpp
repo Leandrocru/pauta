@@ -190,6 +190,22 @@ void Score::removeMeasures(int first, int last)
     shiftChanges(marks, last + 1, -count, first, last, 0);
 }
 
+Pitch pitchFromMidi(int midi, int keyFifths)
+{
+    // Pitch class -> (step, alter), with sharps (sharp keys and C) or flats (flat keys).
+    static const int sharpStep[12] = { 0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6 };
+    static const int sharpAlt[12] = { 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0 };
+    static const int flatStep[12] = { 0, 1, 1, 2, 2, 3, 4, 4, 5, 5, 6, 6 };
+    static const int flatAlt[12] = { 0, -1, 0, -1, 0, 0, -1, 0, -1, 0, -1, 0 };
+    midi = std::clamp(midi, 0, 127);
+    const int pc = midi % 12;
+    Pitch p;
+    p.octave = midi / 12 - 1;
+    p.step = keyFifths < 0 ? flatStep[pc] : sharpStep[pc];
+    p.alter = keyFifths < 0 ? flatAlt[pc] : sharpAlt[pc];
+    return p;
+}
+
 std::vector<PartRange> Score::parts() const
 {
     std::vector<PartRange> out;

@@ -243,6 +243,30 @@ void Editor::enterStep(int step)
     emit cursorChanged();
 }
 
+void Editor::enterPitches(std::vector<Pitch> pitches)
+{
+    if (pitches.empty()) return;
+    std::sort(pitches.begin(), pitches.end(), [](const Pitch& a, const Pitch& b) { return a.diatonic() < b.diatonic(); });
+    m_cursor.diatonic = std::clamp(pitches.back().diatonic(), 7, 7 * 8 + 6);
+    if (currentEvent()) {
+        mutate(QStringLiteral("Alterar nota"), [&] {
+            Event* e = currentEventMut();
+            e->pitches = pitches;
+            ++m_cursor.index;
+            advanceIfFull();
+            return true;
+        });
+    } else {
+        mutate(QStringLiteral("Inserir nota"), [&] {
+            Event e;
+            e.durLog = m_durLog;
+            e.pitches = pitches;
+            return insertEvent(std::move(e));
+        });
+    }
+    emit cursorChanged();
+}
+
 void Editor::changeDurationInPlace(int durLog)
 {
     m_durLog = durLog;

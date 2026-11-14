@@ -9,6 +9,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include "playback/MidiIn.h"
 #include "playback/MidiOut.h"
 #include "playback/Sequence.h"
 #include "io/NativeFormat.h"
@@ -134,6 +135,7 @@ int main(int argc, char* argv[])
         QStringLiteral("(teste) Ações de mouse: \"move|click:compasso:alvo:altura\" (alvo = fim ou índice da nota; altura = diatônico, 34 = Si4)."),
         QStringLiteral("acoes"));
     QCommandLineOption partOpt(QStringLiteral("part"), QStringLiteral("(teste) Mostra a parte N (1 = primeiro instrumento)."), QStringLiteral("N"));
+    QCommandLineOption midiNotesOpt(QStringLiteral("midi-notes"), QStringLiteral("(teste) Simula o teclado MIDI: \"60+64+67 62\" (acordes com +)."), QStringLiteral("notas"));
     QCommandLineOption menuOpt(QStringLiteral("menu-action"), QStringLiteral("(teste) Aciona o item de menu com este texto."), QStringLiteral("texto"));
     QCommandLineOption dialogGrabOpt(QStringLiteral("grab-dialog"), QStringLiteral("(teste) Captura a janela de diálogo que abrir e a confirma."), QStringLiteral("arquivo.png"));
     QCommandLineOption whatsNewGrabOpt(QStringLiteral("grab-whats-new"), QStringLiteral("(teste) Captura a janela de novidades."), QStringLiteral("arquivo.png"));
@@ -141,7 +143,7 @@ int main(int argc, char* argv[])
     QCommandLineOption updCheckOpt(QStringLiteral("update-check"), QStringLiteral("(teste) Consulta a última versão no GitHub e sai."));
     QCommandLineOption playCheckOpt(QStringLiteral("playback-check"), QStringLiteral("(teste) Monta a sequência de reprodução e abre a saída de som, sem tocar."));
     QCommandLineOption iconOpt(QStringLiteral("write-icon"), QStringLiteral("(desenvolvimento) Gera o ícone do programa."), QStringLiteral("pasta"));
-    cli.addOptions({ pdfOpt, pngOpt, benchOpt, emptyOpt, keysOpt, grabOpt, savePauta, toolOpt, scrollOpt, selectOpt, iconOpt, playCheckOpt, mouseOpt, updCheckOpt, whatsNewGrabOpt, mxlOutOpt, menuOpt, dialogGrabOpt, partOpt });
+    cli.addOptions({ pdfOpt, pngOpt, benchOpt, emptyOpt, keysOpt, grabOpt, savePauta, toolOpt, scrollOpt, selectOpt, iconOpt, playCheckOpt, mouseOpt, updCheckOpt, whatsNewGrabOpt, mxlOutOpt, menuOpt, dialogGrabOpt, partOpt, midiNotesOpt });
     cli.addPositionalArgument(QStringLiteral("partitura"), QStringLiteral("Arquivo .pauta ou MusicXML a abrir."));
     cli.process(app);
 
@@ -265,6 +267,18 @@ int main(int argc, char* argv[])
                                               TimeSig{ 4, 4 }, 0, 8));
     const bool testMode = cli.isSet(keysOpt) || cli.isSet(grabOpt) || cli.isSet(mouseOpt);
     if (testMode) {
+        // A dialog opened during the test is captured and confirmed (OK).
+        if (cli.isSet(dialogGrabOpt)) {
+            auto* poll = new QTimer(&w);
+            QObject::connect(poll, &QTimer::timeout, poll, [poll, file = cli.value(dialogGrabOpt)] {
+                QWidget* dlg = QApplication::activeModalWidget();
+                if (!dlg) return;
+                poll->stop();
+                dlg->grab().save(file);
+                QMetaObject::invokeMethod(dlg, "accept", Qt::QueuedConnection);
+            });
+            poll->start(100);
+        }
         w.setTool(cli.isSet(toolOpt) ? Tool(cli.value(toolOpt).toInt()) : Tool::SpeedyEntry);
         if (cli.isSet(scrollOpt)) w.view()->setContinuous(true);
         if (cli.isSet(partOpt)) w.showPart(cli.value(partOpt).toInt() - 1);
@@ -277,18 +291,6 @@ int main(int argc, char* argv[])
     if (testMode) {
         QApplication::processEvents();
         if (cli.isSet(selectOpt)) w.editor()->selectAll();
-        // A dialog opened by the actions below is captured and confirmed (OK).
-        if (cli.isSet(dialogGrabOpt)) {
-            auto* poll = new QTimer(&w);
-            QObject::connect(poll, &QTimer::timeout, poll, [poll, file = cli.value(dialogGrabOpt)] {
-                QWidget* dlg = QApplication::activeModalWidget();
-                if (!dlg) return;
-                poll->stop();
-                dlg->grab().save(file);
-                QMetaObject::invokeMethod(dlg, "accept", Qt::QueuedConnection);
-            });
-            poll->start(100);
-        }
         for (const QString& text : cli.values(menuOpt))
             for (QAction* a : w.findChildren<QAction*>())
                 if (a->text().remove(QLatin1Char('&')).startsWith(text)) {
@@ -330,6 +332,12 @@ int main(int argc, char* argv[])
                 QKeyEvent press(QEvent::KeyPress, kc.key(), kc.keyboardModifiers(), text);
                 QApplication::sendEvent(w.view(), &press);
             }
+            QApplication::processEvents();
+        }
+        for (const QString& chord : cli.value(midiNotesOpt).split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
+            const QStringList notes = chord.split(QLatin1Char('+'), Qt::SkipEmptyParts);
+            for (const QString& n : notes) w.midiIn()->inject(0x90, uint8_t(n.toInt()), 90);
+            for (const QString& n : notes) w.midiIn()->inject(0x80, uint8_t(n.toInt()), 0);
             QApplication::processEvents();
         }
         if (cli.isSet(grabOpt)) {

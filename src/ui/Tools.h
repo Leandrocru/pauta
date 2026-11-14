@@ -50,7 +50,7 @@ inline const std::vector<ToolInfo>& toolList()
         { Tool::Measure, QStringLiteral("Compasso"), QStringLiteral("Clique ou arraste para selecionar compassos. Use o menu Compasso para inserir ou excluir."), true, false },
         { Tool::SimpleEntry, QStringLiteral("Entrada simples"), QStringLiteral("Escolha a duração na paleta e clique na pauta para inserir a nota."), true, true },
         { Tool::SpeedyEntry, QStringLiteral("Entrada rápida"), QStringLiteral("Clique num compasso e digite: números = duração, letras = notas, Enter = acorde. F1 mostra os atalhos."), true, false },
-        { Tool::HyperScribe, QStringLiteral("Teclado MIDI"), QStringLiteral("Em breve: escrever tocando num teclado MIDI."), false, false },
+        { Tool::HyperScribe, QStringLiteral("Teclado MIDI"), QStringLiteral("Toque no teclado MIDI: cada nota ou acorde entra no cursor com a duração escolhida (números 1–8). Setas movem o cursor, R = pausa."), true, false },
         { Tool::Tuplet, QStringLiteral("Quiáltera"), QStringLiteral("Em breve."), false, true },
         { Tool::SmartShape, QStringLiteral("Linhas e ligaduras"), QStringLiteral("Escolha ligadura, crescendo ou diminuendo na paleta; clique na primeira nota e depois na última."), true, false },
         { Tool::Articulation, QStringLiteral("Articulação"), QStringLiteral("Escolha a articulação na paleta e clique nas notas (clicar de novo remove)."), true, false },

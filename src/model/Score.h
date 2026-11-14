@@ -192,7 +192,8 @@ Frac durationOf(int durLog, int dots);
 int clefMiddleLine(Clef clef);              // diatonic index of the middle staff line
 int staffPosition(int diatonic, Clef clef);  // 0 = middle line, +1 per diatonic step up
 int keyAlterFor(int step, int keyFifths);    // alteration implied by the key signature
-QString pitchName(const Pitch& p);           // e.g. "Fá♯4"
+QString pitchName(const Pitch& p);
+Pitch pitchFromMidi(int midi, int keyFifths); // spelled with sharps or flats following the key           // e.g. "Fá♯4"
 QString durationName(int durLog);            // e.g. "Semínima"
 QString clefName(Clef clef);
 QString keyName(int fifths);

@@ -59,6 +59,7 @@ public:
     void changeDurationInPlace(int durLog); // Simple Entry: number on a selected note
     void addStepToChord(int step);   // Simple Entry: Shift+letter adds to the current/previous chord
     void enterAtCursorPitch();       // Enter: insert note / toggle pitch in chord
+    void enterPitches(std::vector<Pitch> pitches); // MIDI keyboard: a note or chord at the cursor (current duration)
     void enterRest();                // R: insert rest / toggle note<->rest
     void deleteEvent();              // Delete
     void backspace();                // Backspace
