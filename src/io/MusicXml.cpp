@@ -98,6 +98,22 @@ QString chordFromHarmony(const QDomElement& h)
 
 QString childText(const QDomElement& e, const QString& name) { return e.firstChildElement(name).text().trimmed(); }
 
+// "D.S. al Coda", "to coda" ... -> Jump (0 if the words are not a jump instruction).
+int jumpFromWords(const QString& words)
+{
+    auto norm = [](QString t) { return t.toLower().remove(QLatin1Char(' ')).remove(QLatin1Char('.')); };
+    const QString w = norm(words);
+    if (w.isEmpty()) return JumpNone;
+    for (int j = JumpFine; j < JumpCount; ++j)
+        if (w == norm(jumpText(j))) return j;
+    if (w == u"dacapoalfine") return JumpDCalFine;
+    if (w == u"dacapo") return JumpDC;
+    if (w == u"dalsegnoalcoda") return JumpDSalCoda;
+    if (w == u"dalsegnoalfine") return JumpDSalFine;
+    if (w == u"dalsegno") return JumpDS;
+    return JumpNone;
+}
+
 QByteArray readScoreBytes(const QString& path, QString* error)
 {
     if (path.endsWith(QStringLiteral(".mxl"), Qt::CaseInsensitive)) {
@@ -214,6 +230,7 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
         partNames[sp.attribute(QStringLiteral("id"))] = childText(sp, QStringLiteral("part-name"));
 
     bool timeSet = false, keySet = false;
+    bool firstPart = true; // repeats, endings and jumps are read from the first part only
     bool tempoSet = false;
     int droppedNotes = 0, graceNotes = 0;
 
@@ -224,6 +241,8 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
         std::array<int, 8> pendingWedge{};             // per staff: hairpin waiting for its first note
         int divisions = 1;
         bool firstMeasure = true;
+        unsigned openEnding = 0;   // ending bracket running over the measures being read
+        bool endingCloses = false; // ...and it ends in the current measure
 
         for (QDomElement me = part.firstChildElement(QStringLiteral("measure")); !me.isNull();
              me = me.nextSiblingElement(QStringLiteral("measure"))) {
@@ -270,7 +289,55 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
                         if (firstMeasure) staves[size_t(n)].clef = cl;
                         else if (cl != staves[size_t(n)].clefAt(mi)) staves[size_t(n)].clefChanges[mi] = cl;
                     }
+                } else if (tag == u"barline" && firstPart) {
+                    const int mi = int(staves.front().measures.size());
+                    MeasureMarks mk = s.marksAt(mi);
+                    const QDomElement rep = el.firstChildElement(QStringLiteral("repeat"));
+                    if (!rep.isNull()) {
+                        if (rep.attribute(QStringLiteral("direction")) == u"forward") {
+                            mk.repeatStart = true;
+                        } else {
+                            mk.repeatEnd = true;
+                            const int times = rep.attribute(QStringLiteral("times")).toInt();
+                            mk.repeatTimes = times >= 2 ? std::min(times, 99) : 2;
+                        }
+                    }
+                    const QDomElement ending = el.firstChildElement(QStringLiteral("ending"));
+                    if (!ending.isNull()) {
+                        if (ending.attribute(QStringLiteral("type")) == u"start") openEnding = endingsFromLabel(ending.attribute(QStringLiteral("number")));
+                        else endingCloses = true;
+                    }
+                    const QString style = childText(el, QStringLiteral("bar-style"));
+                    if (rep.isNull() && el.attribute(QStringLiteral("location"), QStringLiteral("right")) == u"right") {
+                        if (style == u"light-light") mk.bar = BarStyle::Double;
+                        else if (style == u"light-heavy") mk.bar = BarStyle::Final;
+                    }
+                    s.setMarks(mi, mk);
                 } else if (tag == u"direction") {
+                    if (firstPart) {
+                        // Segno, coda and jump instructions (words and/or <sound dacapo|dalsegno|fine|tocoda>).
+                        const int mi = int(staves.front().measures.size());
+                        MeasureMarks mk = s.marksAt(mi);
+                        const QDomElement snd = el.firstChildElement(QStringLiteral("sound"));
+                        const bool toCoda = snd.hasAttribute(QStringLiteral("tocoda"));
+                        int jump = JumpNone;
+                        for (QDomElement dt = el.firstChildElement(QStringLiteral("direction-type")); !dt.isNull();
+                             dt = dt.nextSiblingElement(QStringLiteral("direction-type"))) {
+                            if (!dt.firstChildElement(QStringLiteral("segno")).isNull()) mk.segno = true;
+                            if (!dt.firstChildElement(QStringLiteral("coda")).isNull() && !toCoda) mk.coda = true;
+                            for (QDomElement wd = dt.firstChildElement(QStringLiteral("words")); !wd.isNull();
+                                 wd = wd.nextSiblingElement(QStringLiteral("words")))
+                                if (const int j = jumpFromWords(wd.text())) jump = j;
+                        }
+                        if (!jump && !snd.isNull()) {
+                            if (snd.attribute(QStringLiteral("dacapo")) == u"yes") jump = JumpDC;
+                            else if (snd.hasAttribute(QStringLiteral("dalsegno"))) jump = JumpDS;
+                            else if (snd.hasAttribute(QStringLiteral("fine"))) jump = JumpFine;
+                            else if (toCoda) jump = JumpToCoda;
+                        }
+                        if (jump) mk.jump = jump;
+                        s.setMarks(mi, mk);
+                    }
                     // Dynamics (<direction-type><dynamics><mf/>) attach to the next note of that staff.
                     for (QDomElement dt = el.firstChildElement(QStringLiteral("direction-type")); !dt.isNull();
                          dt = dt.nextSiblingElement(QStringLiteral("direction-type"))) {
@@ -461,12 +528,21 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
                 }
                 staves[k].measures.push_back(std::move(m));
             }
+            if (firstPart && openEnding) {
+                const int mi = int(staves.front().measures.size()) - 1;
+                MeasureMarks mk = s.marksAt(mi);
+                mk.endings = openEnding;
+                s.setMarks(mi, mk);
+                if (endingCloses) openEnding = 0;
+            }
+            endingCloses = false;
             firstMeasure = false;
         }
 
         const QString name = partNames[part.attribute(QStringLiteral("id"))];
         staves.front().name = name;
         for (Staff& stf : staves) s.staves.push_back(std::move(stf));
+        firstPart = false;
     }
 
     if (s.staves.empty()) {
@@ -476,6 +552,12 @@ bool importMusicXml(Score& out, const QString& path, QString* error, QStringList
     size_t maxM = 1;
     for (const Staff& stf : s.staves) maxM = std::max(maxM, stf.measures.size());
     s.setMeasureCount(int(maxM));
+    // The final barline of the last measure is drawn anyway.
+    if (MeasureMarks mk = s.marksAt(int(maxM) - 1); mk.bar == BarStyle::Final) {
+        mk.bar = BarStyle::Normal;
+        s.setMarks(int(maxM) - 1, mk);
+    }
+    for (auto it = s.marks.begin(); it != s.marks.end();) it = it->first >= int(maxM) ? s.marks.erase(it) : std::next(it);
     if (s.title.isEmpty()) s.title = QFileInfo(path).completeBaseName();
 
     if (warnings) {

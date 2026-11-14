@@ -56,6 +56,9 @@ private:
     void chooseKey(int fromMeasure = -1);  // -1: ask, starting at the cursor measure
     void chooseTime(int fromMeasure = -1);
     void chooseClef(int staff, int fromMeasure);
+    void editRepeats(int measure);
+    void applyRepeatSign(int measure);
+    int m_armedRepeat = 0; // Repeat tool: 0 = open the dialog on click, otherwise the sign to toggle
     void editStaff(int staff);
     void addStaffDialog();
     void addMeasuresDialog();

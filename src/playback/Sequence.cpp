@@ -38,9 +38,10 @@ Sequence buildSequence(const Score& score, int fromMeasure)
     const double secPerWhole = 4.0 * 60.0 / std::max(score.tempo, 1);
 
     // Measure start times (a measure lasts its time signature, or longer if overfilled).
+    seq.order = score.playOrder(fromMeasure);
     double t = 0;
     std::vector<double> starts;
-    for (int m = fromMeasure; m < nMeasures; ++m) {
+    for (const int m : seq.order) {
         starts.push_back(t);
         Frac len = score.capacityAt(m);
         for (const Staff& st : score.staves)
@@ -64,10 +65,10 @@ Sequence buildSequence(const Score& score, int fromMeasure)
         // (sfz, sf) do not change the level; fp is loud once, then piano.
         std::vector<std::pair<double, int>> levels; // (time, velocity)
         for (int v = 0; v < kVoices; ++v)
-            for (int m = fromMeasure; m < nMeasures; ++m) {
+            for (size_t oi = 0; oi < seq.order.size(); ++oi) {
                 Frac p;
-                for (const Event& e : st.measures[size_t(m)].voice(v)) {
-                    const double t0 = starts[size_t(m - fromMeasure)] + p.toDouble() * secPerWhole;
+                for (const Event& e : st.measures[size_t(seq.order[oi])].voice(v)) {
+                    const double t0 = starts[oi] + p.toDouble() * secPerWhole;
                     p += e.duration();
                     if (!e.dynamic || e.dynamic == DynSFZ || e.dynamic == DynSF) continue;
                     levels.push_back({ t0, dynamicVelocity(e.dynamic == DynFP ? int(DynP) : e.dynamic) });
@@ -96,10 +97,10 @@ Sequence buildSequence(const Score& score, int fromMeasure)
         for (int v = 0; v < kVoices; ++v) {
             double openAt = -1;
             int openDir = 0;
-            for (int m = fromMeasure; m < nMeasures; ++m) {
+            for (size_t oi = 0; oi < seq.order.size(); ++oi) {
                 Frac p;
-                for (const Event& e : st.measures[size_t(m)].voice(v)) {
-                    const double t0 = starts[size_t(m - fromMeasure)] + p.toDouble() * secPerWhole;
+                for (const Event& e : st.measures[size_t(seq.order[oi])].voice(v)) {
+                    const double t0 = starts[oi] + p.toDouble() * secPerWhole;
                     p += e.duration();
                     if (openAt >= 0 && e.hairpinEnd) {
                         ramps.push_back({ openAt, std::max(t0, openAt + 0.01), openDir });
@@ -130,10 +131,10 @@ Sequence buildSequence(const Score& score, int fromMeasure)
 
         for (int v = 0; v < kVoices; ++v) {
             std::map<int, size_t> tied; // diatonic -> note still sounding through a tie
-            for (int m = fromMeasure; m < nMeasures; ++m) {
+            for (size_t oi = 0; oi < seq.order.size(); ++oi) {
                 Frac pos;
-                for (const Event& e : st.measures[size_t(m)].voice(v)) {
-                    const double start = starts[size_t(m - fromMeasure)] + pos.toDouble() * secPerWhole;
+                for (const Event& e : st.measures[size_t(seq.order[oi])].voice(v)) {
+                    const double start = starts[oi] + pos.toDouble() * secPerWhole;
                     const double dur = e.duration().toDouble() * secPerWhole;
                     pos += e.duration();
                     std::map<int, size_t> stillTied;

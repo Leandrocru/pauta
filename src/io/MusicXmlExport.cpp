@@ -289,10 +289,72 @@ void Writer::writePart(const Part& p, int partIndex)
                 m_w.writeEndElement(); // direction
             }
         }
+        // Repeats and endings starting here; segno / coda.
+        const MeasureMarks mk = m_s.marksAt(m);
+        const bool endingStarts = mk.endings && (m == 0 || m_s.marksAt(m - 1).endings != mk.endings);
+        const bool endingStops = mk.endings && m_s.marksAt(m + 1).endings != mk.endings;
+        auto endingNumber = [&] { return endingLabel(mk.endings).remove(QLatin1Char('.')); };
+        if (mk.repeatStart || endingStarts) {
+            m_w.writeStartElement("barline");
+            m_w.writeAttribute("location", "left");
+            if (mk.repeatStart) m_w.writeTextElement("bar-style", "heavy-light");
+            if (endingStarts) {
+                m_w.writeStartElement("ending");
+                m_w.writeAttribute("number", endingNumber());
+                m_w.writeAttribute("type", "start");
+                m_w.writeCharacters(endingLabel(mk.endings));
+                m_w.writeEndElement();
+            }
+            if (mk.repeatStart) {
+                m_w.writeEmptyElement("repeat");
+                m_w.writeAttribute("direction", "forward");
+            }
+            m_w.writeEndElement();
+        }
+        auto markDirection = [&](const char* symbol, const QString& words, const char* soundAttr, const QString& soundValue) {
+            m_w.writeStartElement("direction");
+            m_w.writeAttribute("placement", "above");
+            m_w.writeStartElement("direction-type");
+            if (symbol) m_w.writeEmptyElement(symbol);
+            else m_w.writeTextElement("words", words);
+            m_w.writeEndElement();
+            m_w.writeEmptyElement("sound");
+            m_w.writeAttribute(soundAttr, soundValue);
+            m_w.writeEndElement();
+        };
+        if (partIndex == 0 && mk.segno) markDirection("segno", {}, "segno", QStringLiteral("segno"));
+        if (partIndex == 0 && mk.coda) markDirection("coda", {}, "coda", QStringLiteral("coda"));
+
         // Every staff and layer of the part, going back in time (<backup>) between them.
         int64_t written = 0;
         for (int k = 0; k < p.staffCount; ++k)
             for (int v = 0; v < kVoices; ++v) writeLayer(p, k, v, m, written);
+
+        // Jump instruction and right barline.
+        if (partIndex == 0 && mk.jump) {
+            const QString text = jumpText(mk.jump);
+            if (mk.jump == JumpFine) markDirection(nullptr, text, "fine", QStringLiteral("yes"));
+            else if (mk.jump == JumpToCoda) markDirection(nullptr, text, "tocoda", QStringLiteral("coda"));
+            else if (mk.jump >= JumpDS) markDirection(nullptr, text, "dalsegno", QStringLiteral("segno"));
+            else markDirection(nullptr, text, "dacapo", QStringLiteral("yes"));
+        }
+        if (mk.repeatEnd || endingStops || mk.bar != BarStyle::Normal) {
+            m_w.writeStartElement("barline");
+            m_w.writeAttribute("location", "right");
+            if (mk.repeatEnd || mk.bar == BarStyle::Final) m_w.writeTextElement("bar-style", "light-heavy");
+            else if (mk.bar == BarStyle::Double) m_w.writeTextElement("bar-style", "light-light");
+            if (endingStops) {
+                m_w.writeEmptyElement("ending");
+                m_w.writeAttribute("number", endingNumber());
+                m_w.writeAttribute("type", mk.repeatEnd ? "stop" : "discontinue");
+            }
+            if (mk.repeatEnd) {
+                m_w.writeEmptyElement("repeat");
+                m_w.writeAttribute("direction", "backward");
+                if (mk.repeatTimes > 2) m_w.writeAttribute("times", QString::number(mk.repeatTimes));
+            }
+            m_w.writeEndElement();
+        }
         m_w.writeEndElement(); // measure
     }
     m_w.writeEndElement(); // part

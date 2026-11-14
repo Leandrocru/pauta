@@ -115,6 +115,26 @@ struct TimeSig {
     bool operator==(const TimeSig&) const = default;
 };
 
+// Repeats, endings, jumps and special barlines of one measure (the same in every staff).
+enum class BarStyle { Normal, Double, Final };
+enum Jump : int {
+    JumpNone = 0, JumpFine, JumpDC, JumpDCalFine, JumpDCalCoda, JumpDS, JumpDSalFine, JumpDSalCoda, JumpToCoda, JumpCount
+};
+
+struct MeasureMarks {
+    bool repeatStart = false;   // |: at the start of the measure
+    bool repeatEnd = false;     // :| at the end of the measure
+    int repeatTimes = 2;        // total times the repeated section is played
+    unsigned endings = 0;       // volta bracket over this measure: bit n-1 = ending n ("1.", "2.")
+    BarStyle bar = BarStyle::Normal; // barline at the end of the measure (repeats take precedence)
+    bool segno = false;         // 𝄋 at the start of the measure
+    bool coda = false;          // 𝄌 at the start of the measure (target of "To Coda")
+    int jump = JumpNone;        // instruction at the end of the measure (Fine, D.C., D.S., To Coda)
+
+    bool isEmpty() const { return *this == MeasureMarks{}; }
+    bool operator==(const MeasureMarks&) const = default;
+};
+
 struct Score {
     QString title;
     QString composer;
@@ -124,7 +144,21 @@ struct Score {
     std::map<int, TimeSig> timeChanges;
     std::map<int, int> keyChanges;
     int tempo = 96;    // quarter notes per minute (playback)
+    std::map<int, MeasureMarks> marks; // measure index -> repeats/endings/jumps (only non-empty ones)
     std::vector<Staff> staves;
+
+    MeasureMarks marksAt(int measure) const
+    {
+        const auto it = marks.find(measure);
+        return it != marks.end() ? it->second : MeasureMarks{};
+    }
+    void setMarks(int measure, const MeasureMarks& mk)
+    {
+        if (mk.isEmpty()) marks.erase(measure);
+        else marks[measure] = mk;
+    }
+    // Measures in the order they are played (repeats, endings, D.C./D.S., Fine and Coda unrolled).
+    std::vector<int> playOrder(int fromMeasure = 0) const;
 
     int measureCount() const { return staves.empty() ? 0 : int(staves.front().measures.size()); }
     TimeSig timeAt(int measure) const;
@@ -159,6 +193,11 @@ QString prettyChord(const QString& typed);   // "F#m7b5" -> "F♯m7♭5" for dis
 int dynamicFromText(const QString& text);    // "mf" -> DynMF (0 if unknown)
 int dynamicVelocity(int dynamic);            // MIDI velocity for playback
 QString articulationName(unsigned artic);    // "Staccato"
-QString articulationKey(unsigned artic);     // "staccato" (file format)                 // e.g. "Sol maior / mi menor (1 ♯)"
+QString articulationKey(unsigned artic);     // "staccato" (file format)
+QString jumpText(int jump);                  // "D.S. al Coda" (as printed)
+QString jumpKey(int jump);                   // "dsalcoda" (file format)
+int jumpFromKey(const QString& key);
+QString endingLabel(unsigned endings);       // 0b011 -> "1., 2."
+unsigned endingsFromLabel(const QString& s); // "1, 2" / "1.2." -> 0b011
 
 } // namespace pauta

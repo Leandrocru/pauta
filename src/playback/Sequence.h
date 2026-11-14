@@ -16,13 +16,15 @@ struct MidiMsg {
 
 struct Sequence {
     std::vector<MidiMsg> messages;     // sorted by time (offs before ons at the same time)
-    std::vector<double> measureStart;  // seconds, for measures fromMeasure..end
+    std::vector<int> order;            // measures in playing order (repeats unrolled)
+    std::vector<double> measureStart;  // seconds, one per entry of `order`
     int fromMeasure = 0;
     double length = 0;                 // seconds
     int noteCount = 0;
 };
 
-// Playback from `fromMeasure` to the end. Ties are joined into one sounding note.
+// Playback from `fromMeasure` to the end, following repeats, endings and jumps.
+// Ties are joined into one sounding note.
 Sequence buildSequence(const Score& score, int fromMeasure = 0);
 
 int midiPitch(const Pitch& p);

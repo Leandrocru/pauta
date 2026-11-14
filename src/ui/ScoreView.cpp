@@ -792,6 +792,7 @@ void ScoreView::mousePressEvent(QMouseEvent* e)
     case Tool::Clef:
     case Tool::KeySig:
     case Tool::TimeSig:
+    case Tool::Repeat:
         if (h.slot) emit toolClicked(m_tool, h.slot->staff, h.slot->measure);
         return;
     default:

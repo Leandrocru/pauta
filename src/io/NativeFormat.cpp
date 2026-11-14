@@ -83,6 +83,23 @@ bool saveNative(const Score& score, const QString& path, QString* error)
             }
             if (firstStaff && score.keyChangesAt(int(mi))) w.writeAttribute("key", QString::number(score.keyAt(int(mi))));
             if (mi > 0 && st.clefChanges.count(int(mi))) w.writeAttribute("clef", clefKey(st.clefChanges.at(int(mi))));
+            // Repeats, endings and jumps (stored on the first staff).
+            if (firstStaff) {
+                const MeasureMarks mk = score.marksAt(int(mi));
+                if (mk.repeatStart) w.writeAttribute("repeatStart", QStringLiteral("1"));
+                if (mk.repeatEnd) w.writeAttribute("repeatEnd", QString::number(mk.repeatTimes));
+                if (mk.endings) {
+                    QStringList nums;
+                    for (int k = 0; k < 32; ++k)
+                        if (mk.endings & (1u << k)) nums << QString::number(k + 1);
+                    w.writeAttribute("endings", nums.join(QLatin1Char(',')));
+                }
+                if (mk.bar == BarStyle::Double) w.writeAttribute("bar", QStringLiteral("double"));
+                if (mk.bar == BarStyle::Final) w.writeAttribute("bar", QStringLiteral("final"));
+                if (mk.segno) w.writeAttribute("segno", QStringLiteral("1"));
+                if (mk.coda) w.writeAttribute("coda", QStringLiteral("1"));
+                if (mk.jump) w.writeAttribute("jump", jumpKey(mk.jump));
+            }
             auto writeEvents = [&](const std::vector<Event>& events) {
                 for (const Event& e : events) {
                     w.writeStartElement(e.isRest() ? "rest" : "chord");
@@ -196,6 +213,20 @@ bool loadNative(Score& out, const QString& path, QString* error)
                     if (ts.size() == 2) s.timeChanges[mi] = TimeSig{ qBound(1, ts[0].toInt(), 64), qBound(1, ts[1].toInt(), 64) };
                     if (!attr(a, "key").isEmpty()) s.keyChanges[mi] = qBound(-7, attrInt(a, "key", 0), 7);
                     if (!attr(a, "clef").isEmpty()) staff->clefChanges[mi] = clefFromKey(attr(a, "clef"));
+                }
+                if (s.staves.size() == 1) {
+                    MeasureMarks mk;
+                    mk.repeatStart = attrInt(a, "repeatStart", 0) != 0;
+                    const int times = attrInt(a, "repeatEnd", 0);
+                    mk.repeatEnd = times > 0;
+                    if (mk.repeatEnd) mk.repeatTimes = qBound(2, times, 99);
+                    mk.endings = endingsFromLabel(attr(a, "endings").toString());
+                    const auto bar = attr(a, "bar");
+                    mk.bar = bar == u"double" ? BarStyle::Double : bar == u"final" ? BarStyle::Final : BarStyle::Normal;
+                    mk.segno = attrInt(a, "segno", 0) != 0;
+                    mk.coda = attrInt(a, "coda", 0) != 0;
+                    mk.jump = jumpFromKey(attr(a, "jump").toString());
+                    s.setMarks(mi, mk);
                 }
             } else if (n == u"voice" && measure) {
                 voiceIdx = qBound(0, attrInt(a, "n", 1) - 1, kVoices - 1);

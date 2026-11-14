@@ -47,6 +47,10 @@ public:
     void armTuplet(int actual);            // Ctrl+3 etc.: the next notes form a tuplet
     int armedTuplet() const { return m_tupArm ? m_tupArm : m_tupActual; }
     void setTempo(int qpm);
+    // Repeats, endings and jumps of one measure (whole system); "|: :|" around the selection.
+    void setMeasureMarks(int measure, const MeasureMarks& mk);
+    void repeatSelection();
+    void clearMarksInSelection();
     void restore(const Score& s, const Cursor& c); // used by undo/redo
 
     // Note entry

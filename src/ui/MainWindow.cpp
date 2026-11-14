@@ -18,6 +18,8 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QComboBox>
+#include <QHBoxLayout>
+#include <QCheckBox>
 #include <QDialogButtonBox>
 #include <QDockWidget>
 #include <QFileDialog>
@@ -612,6 +614,28 @@ void MainWindow::setTool(Tool t)
     m_view->setFocus();
 }
 
+namespace {
+// Signs of the Repeat tool menu (toggled by a click on a measure).
+struct RepeatSign { const char* name; };
+const RepeatSign kRepeatSigns[] = {
+    { "Editar o compasso clicado (janela)" },
+    { "Ritornelo de início  |:" },
+    { "Ritornelo de fim  :|" },
+    { "Casa 1 (1ª vez)" },
+    { "Casa 2 (2ª vez)" },
+    { "Segno  𝄋" },
+    { "Coda  𝄌" },
+    { "Fine" },
+    { "D.C. al Fine" },
+    { "D.C. al Coda" },
+    { "D.S. al Fine" },
+    { "D.S. al Coda" },
+    { "To Coda" },
+    { "Barra dupla" },
+    { "Barra final" },
+};
+} // namespace
+
 void MainWindow::rebuildToolMenu()
 {
     m_toolMenu->clear();
@@ -700,6 +724,22 @@ void MainWindow::rebuildToolMenu()
             m_toolMenu->addSeparator();
             m_toolMenu->addAction(QStringLiteral("Remover linhas e ligaduras (seleção ou nota do cursor)"), this,
                                   [this] { m_editor->clearSmartShapes(); });
+        } else if (m_tool == Tool::Repeat) {
+            auto* group = new QActionGroup(m_toolMenu);
+            for (int i = 0; i < int(std::size(kRepeatSigns)); ++i) {
+                if (i == 1 || i == 5 || i == 13) m_toolMenu->addSeparator();
+                QAction* a = m_toolMenu->addAction(QString::fromUtf8(kRepeatSigns[i].name), this, [this, i] {
+                    m_armedRepeat = i;
+                    statusBar()->showMessage(i ? QStringLiteral("Clique nos compassos para pôr ou tirar: %1").arg(QString::fromUtf8(kRepeatSigns[i].name))
+                                               : QStringLiteral("Clique num compasso para editar as repetições dele."), 4000);
+                });
+                a->setCheckable(true);
+                a->setChecked(i == m_armedRepeat);
+                group->addAction(a);
+            }
+            m_toolMenu->addSeparator();
+            m_toolMenu->addAction(QStringLiteral("Repetir compassos selecionados  |: :|"), this, [this] { m_editor->repeatSelection(); });
+            m_toolMenu->addAction(QStringLiteral("Remover repetições da seleção"), this, [this] { m_editor->clearMarksInSelection(); });
         } else if (m_tool == Tool::Expression) {
             for (int d = DynPPP; d < DynCount; ++d)
                 m_toolMenu->addAction(dynamicText(d), this, [this, d] { m_view->setArmedDynamic(d); });
@@ -724,6 +764,10 @@ void MainWindow::onToolClicked(Tool tool, int staff, int measure)
     case Tool::Clef: chooseClef(staff, measure); break;
     case Tool::KeySig: chooseKey(measure); break;
     case Tool::TimeSig: chooseTime(measure); break;
+    case Tool::Repeat:
+        if (m_armedRepeat) applyRepeatSign(measure);
+        else editRepeats(measure);
+        break;
     default: break;
     }
 }
@@ -1125,6 +1169,87 @@ void MainWindow::closeEvent(QCloseEvent* e)
     st.setValue(QStringLiteral("window/geometry"), saveGeometry());
     st.setValue(QStringLiteral("window/state"), saveState());
     e->accept();
+}
+
+void MainWindow::applyRepeatSign(int measure)
+{
+    MeasureMarks mk = m_editor->score().marksAt(measure);
+    auto toggleJump = [&](int j) { mk.jump = mk.jump == j ? JumpNone : j; };
+    auto toggleBar = [&](BarStyle b) { mk.bar = mk.bar == b ? BarStyle::Normal : b; };
+    switch (m_armedRepeat) {
+    case 1: mk.repeatStart = !mk.repeatStart; break;
+    case 2: mk.repeatEnd = !mk.repeatEnd; break;
+    case 3: mk.endings ^= 1u; break;
+    case 4: mk.endings ^= 2u; break;
+    case 5: mk.segno = !mk.segno; break;
+    case 6: mk.coda = !mk.coda; break;
+    case 7: toggleJump(JumpFine); break;
+    case 8: toggleJump(JumpDCalFine); break;
+    case 9: toggleJump(JumpDCalCoda); break;
+    case 10: toggleJump(JumpDSalFine); break;
+    case 11: toggleJump(JumpDSalCoda); break;
+    case 12: toggleJump(JumpToCoda); break;
+    case 13: toggleBar(BarStyle::Double); break;
+    case 14: toggleBar(BarStyle::Final); break;
+    default: return;
+    }
+    m_editor->setMeasureMarks(measure, mk);
+}
+
+void MainWindow::editRepeats(int measure)
+{
+    const MeasureMarks cur = m_editor->score().marksAt(measure);
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("Repetição — compasso %1").arg(measure + 1));
+    auto* form = new QFormLayout(&dlg);
+    auto* start = new QCheckBox(QStringLiteral("Ritornelo de início  |:"));
+    start->setChecked(cur.repeatStart);
+    auto* end = new QCheckBox(QStringLiteral("Ritornelo de fim  :|"));
+    end->setChecked(cur.repeatEnd);
+    auto* times = new QSpinBox;
+    times->setRange(2, 20);
+    times->setValue(cur.repeatTimes);
+    times->setSuffix(QStringLiteral(" vezes"));
+    times->setToolTip(QStringLiteral("Quantas vezes o trecho é tocado no total (2 = repete uma vez)."));
+    auto* endings = new QLineEdit(endingLabel(cur.endings).remove(QLatin1Char('.')));
+    endings->setPlaceholderText(QStringLiteral("nenhuma (ex.: 1  ou  1, 2  ou  2)"));
+    endings->setToolTip(QStringLiteral("Casa de 1ª/2ª vez sobre este compasso. Compassos seguidos com a mesma casa ficam sob o mesmo colchete."));
+    auto* segno = new QCheckBox(QStringLiteral("Segno  𝄋 (no início do compasso)"));
+    segno->setChecked(cur.segno);
+    auto* coda = new QCheckBox(QStringLiteral("Coda  𝄌 (no início do compasso)"));
+    coda->setChecked(cur.coda);
+    auto* jump = new QComboBox;
+    jump->addItem(QStringLiteral("nenhuma"), int(JumpNone));
+    for (int j = JumpFine; j < JumpCount; ++j) jump->addItem(jumpText(j), j);
+    jump->setCurrentIndex(jump->findData(cur.jump));
+    auto* bar = new QComboBox;
+    bar->addItem(QStringLiteral("Normal"));
+    bar->addItem(QStringLiteral("Dupla"));
+    bar->addItem(QStringLiteral("Final"));
+    bar->setCurrentIndex(int(cur.bar));
+    form->addRow(start);
+    auto* endRow = new QHBoxLayout;
+    endRow->addWidget(end);
+    endRow->addWidget(times);
+    endRow->addStretch();
+    form->addRow(endRow);
+    form->addRow(QStringLiteral("Casa (1ª/2ª vez):"), endings);
+    form->addRow(segno);
+    form->addRow(coda);
+    form->addRow(QStringLiteral("No fim do compasso:"), jump);
+    form->addRow(QStringLiteral("Barra de compasso:"), bar);
+    addOkCancel(dlg, form);
+    if (dlg.exec() != QDialog::Accepted) return;
+    MeasureMarks mk;
+    mk.repeatStart = start->isChecked();
+    mk.repeatEnd = end->isChecked();
+    mk.repeatTimes = mk.repeatEnd ? times->value() : 2;
+    mk.endings = endingsFromLabel(endings->text());
+    mk.segno = segno->isChecked();
+    mk.coda = coda->isChecked();
+    mk.jump = jump->currentData().toInt();
+    mk.bar = BarStyle(bar->currentIndex());
+    m_editor->setMeasureMarks(measure, mk);
 }
 
 } // namespace pauta

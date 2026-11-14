@@ -34,6 +34,8 @@
 #include <QLocale>
 #include <QRandomGenerator>
 #include <QTextStream>
+#include <QTimer>
+#include <QAction>
 #include <QTranslator>
 
 using namespace pauta;
@@ -131,12 +133,14 @@ int main(int argc, char* argv[])
     QCommandLineOption mouseOpt(QStringLiteral("test-mouse"),
         QStringLiteral("(teste) Ações de mouse: \"move|click:compasso:alvo:altura\" (alvo = fim ou índice da nota; altura = diatônico, 34 = Si4)."),
         QStringLiteral("acoes"));
+    QCommandLineOption menuOpt(QStringLiteral("menu-action"), QStringLiteral("(teste) Aciona o item de menu com este texto."), QStringLiteral("texto"));
+    QCommandLineOption dialogGrabOpt(QStringLiteral("grab-dialog"), QStringLiteral("(teste) Captura a janela de diálogo que abrir e a confirma."), QStringLiteral("arquivo.png"));
     QCommandLineOption whatsNewGrabOpt(QStringLiteral("grab-whats-new"), QStringLiteral("(teste) Captura a janela de novidades."), QStringLiteral("arquivo.png"));
     QCommandLineOption mxlOutOpt(QStringLiteral("export-musicxml"), QStringLiteral("Exporta para MusicXML (.musicxml ou .mxl) e sai."), QStringLiteral("arquivo"));
     QCommandLineOption updCheckOpt(QStringLiteral("update-check"), QStringLiteral("(teste) Consulta a última versão no GitHub e sai."));
     QCommandLineOption playCheckOpt(QStringLiteral("playback-check"), QStringLiteral("(teste) Monta a sequência de reprodução e abre a saída de som, sem tocar."));
     QCommandLineOption iconOpt(QStringLiteral("write-icon"), QStringLiteral("(desenvolvimento) Gera o ícone do programa."), QStringLiteral("pasta"));
-    cli.addOptions({ pdfOpt, pngOpt, benchOpt, emptyOpt, keysOpt, grabOpt, savePauta, toolOpt, scrollOpt, selectOpt, iconOpt, playCheckOpt, mouseOpt, updCheckOpt, whatsNewGrabOpt, mxlOutOpt });
+    cli.addOptions({ pdfOpt, pngOpt, benchOpt, emptyOpt, keysOpt, grabOpt, savePauta, toolOpt, scrollOpt, selectOpt, iconOpt, playCheckOpt, mouseOpt, updCheckOpt, whatsNewGrabOpt, mxlOutOpt, menuOpt, dialogGrabOpt });
     cli.addPositionalArgument(QStringLiteral("partitura"), QStringLiteral("Arquivo .pauta ou MusicXML a abrir."));
     cli.process(app);
 
@@ -196,6 +200,9 @@ int main(int argc, char* argv[])
         for (const playback::MidiMsg& m : seq.messages)
             if ((m.status & 0xF0) == 0x90) vels << QString::number(m.data2);
         out << "volumes=" << vels.join(QLatin1Char(',')) << Qt::endl;
+        QStringList order;
+        for (const int m : seq.order) order << QString::number(m + 1);
+        out << "ordem=" << order.join(QLatin1Char(',')) << Qt::endl;
         out << "notas=" << seq.noteCount << " mensagens=" << seq.messages.size()
             << " duracao=" << QString::number(seq.length, 'f', 2) << "s compassos=" << seq.measureStart.size()
             << " saida=\"" << midi->name() << "\" ok=" << (midi->ok() ? "sim" : "nao") << Qt::endl;
@@ -263,6 +270,24 @@ int main(int argc, char* argv[])
     if (testMode) {
         QApplication::processEvents();
         if (cli.isSet(selectOpt)) w.editor()->selectAll();
+        // A dialog opened by the actions below is captured and confirmed (OK).
+        if (cli.isSet(dialogGrabOpt)) {
+            auto* poll = new QTimer(&w);
+            QObject::connect(poll, &QTimer::timeout, poll, [poll, file = cli.value(dialogGrabOpt)] {
+                QWidget* dlg = QApplication::activeModalWidget();
+                if (!dlg) return;
+                poll->stop();
+                dlg->grab().save(file);
+                QMetaObject::invokeMethod(dlg, "accept", Qt::QueuedConnection);
+            });
+            poll->start(100);
+        }
+        for (const QString& text : cli.values(menuOpt))
+            for (QAction* a : w.findChildren<QAction*>())
+                if (a->text().remove(QLatin1Char('&')).startsWith(text)) {
+                    a->trigger();
+                    break;
+                }
         // Mouse actions on staff 1 of a measure, aimed at the end of the layer or at a note.
         for (const QString& act : cli.value(mouseOpt).split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
             const QStringList f = act.split(QLatin1Char(':'));

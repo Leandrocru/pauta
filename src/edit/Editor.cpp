@@ -647,6 +647,41 @@ void Editor::setTempo(int qpm)
     });
 }
 
+void Editor::setMeasureMarks(int measure, const MeasureMarks& mk)
+{
+    mutate(QStringLiteral("Repetição"), [&] {
+        if (measure < 0 || measure >= m_score.measureCount() || m_score.marksAt(measure) == mk) return false;
+        m_score.setMarks(measure, mk);
+        return true;
+    });
+}
+
+void Editor::repeatSelection()
+{
+    const int m0 = m_sel.active ? m_sel.measure0 : m_cursor.measure;
+    const int m1 = m_sel.active ? m_sel.measure1 : m_cursor.measure;
+    mutate(QStringLiteral("Repetir compassos"), [&] {
+        MeasureMarks a = m_score.marksAt(m0), b = m_score.marksAt(m1);
+        a.repeatStart = true;
+        m_score.setMarks(m0, a);
+        b = m_score.marksAt(m1);
+        b.repeatEnd = true;
+        m_score.setMarks(m1, b);
+        return true;
+    });
+}
+
+void Editor::clearMarksInSelection()
+{
+    const int m0 = m_sel.active ? m_sel.measure0 : m_cursor.measure;
+    const int m1 = m_sel.active ? m_sel.measure1 : m_cursor.measure;
+    mutate(QStringLiteral("Remover repetições"), [&] {
+        bool any = false;
+        for (int m = m0; m <= m1; ++m) any |= m_score.marks.erase(m) > 0;
+        return any;
+    });
+}
+
 void Editor::setVoice(int v)
 {
     m_cursor.voice = std::clamp(v, 0, kVoices - 1);

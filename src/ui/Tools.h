@@ -55,7 +55,7 @@ inline const std::vector<ToolInfo>& toolList()
         { Tool::SmartShape, QStringLiteral("Linhas e ligaduras"), QStringLiteral("Escolha ligadura, crescendo ou diminuendo na paleta; clique na primeira nota e depois na última."), true, false },
         { Tool::Articulation, QStringLiteral("Articulação"), QStringLiteral("Escolha a articulação na paleta e clique nas notas (clicar de novo remove)."), true, false },
         { Tool::Expression, QStringLiteral("Expressão"), QStringLiteral("Escolha a dinâmica na paleta e clique na nota onde ela começa."), true, false },
-        { Tool::Repeat, QStringLiteral("Repetição"), QStringLiteral("Em breve."), false, false },
+        { Tool::Repeat, QStringLiteral("Repetição"), QStringLiteral("Clique num compasso para editar ritornelos, casas, D.C./D.S. e Coda, ou escolha um sinal no menu Repetição e clique nos compassos."), true, false },
         { Tool::Chord, QStringLiteral("Cifra"), QStringLiteral("Clique numa nota e digite a cifra (C7, Am, F#m7b5, G/B). Espaço passa para a próxima nota; Esc termina."), true, true },
         { Tool::Lyrics, QStringLiteral("Letra"), QStringLiteral("Clique numa nota e digite: Espaço = próxima nota, - = hífen, _ = melisma, ↑/↓ = estrofe, Esc termina."), true, false },
         { Tool::Text, QStringLiteral("Texto"), QStringLiteral("Em breve."), false, false },

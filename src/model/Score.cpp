@@ -1,5 +1,7 @@
 #include "model/Score.h"
 
+#include <QStringList>
+
 #include <algorithm>
 
 namespace pauta {
@@ -151,13 +153,13 @@ int Score::keyAt(int measure) const
 namespace {
 // Shifts the keys of a change map: those >= at move by `delta`; those in [dropFrom, dropTo] go away.
 template <typename T>
-void shiftChanges(std::map<int, T>& changes, int at, int delta, int dropFrom = 1, int dropTo = 0)
+void shiftChanges(std::map<int, T>& changes, int at, int delta, int dropFrom = 1, int dropTo = 0, int minKey = 1)
 {
     std::map<int, T> out;
     for (const auto& [m, v] : changes) {
         if (m >= dropFrom && m <= dropTo) continue;
         const int nm = m >= at ? m + delta : m;
-        if (nm > 0) out[nm] = v;
+        if (nm >= minKey) out[nm] = v;
     }
     changes.swap(out);
 }
@@ -172,6 +174,7 @@ void Score::insertMeasures(int at, int n)
     }
     shiftChanges(timeChanges, at, n);
     shiftChanges(keyChanges, at, n);
+    shiftChanges(marks, at, n, 1, 0, 0);
 }
 
 void Score::removeMeasures(int first, int last)
@@ -184,6 +187,85 @@ void Score::removeMeasures(int first, int last)
     }
     shiftChanges(timeChanges, last + 1, -count, first, last);
     shiftChanges(keyChanges, last + 1, -count, first, last);
+    shiftChanges(marks, last + 1, -count, first, last, 0);
+}
+
+std::vector<int> Score::playOrder(int fromMeasure) const
+{
+    const int n = measureCount();
+    std::vector<int> order;
+    if (n == 0) return order;
+    fromMeasure = std::clamp(fromMeasure, 0, n - 1);
+
+    // Highest ending number in the run of bracketed measures around measure i.
+    auto lastEndingOfRun = [&](int i) {
+        int a = i, b = i;
+        while (a > 0 && marksAt(a - 1).endings) --a;
+        while (b + 1 < n && marksAt(b + 1).endings) ++b;
+        unsigned all = 0;
+        for (int k = a; k <= b; ++k) all |= marksAt(k).endings;
+        int hi = 0;
+        while (all >> hi) ++hi;
+        return hi; // 1-based
+    };
+
+    std::map<int, int> played; // :| measure -> times its section has been played
+    int repeatStart = fromMeasure;
+    int pass = 1;
+    bool looping = false;      // just jumped back to the start of a repeat
+    int jumped = JumpNone;     // D.C./D.S. already taken (repeats are not taken again after it)
+    int i = fromMeasure;
+    while (i < n && order.size() < 100000) {
+        const MeasureMarks mk = marksAt(i);
+        if (mk.repeatStart && !looping && !jumped) {
+            repeatStart = i;
+            pass = 1;
+        }
+        looping = false;
+        if (mk.endings) {
+            const int wanted = jumped ? lastEndingOfRun(i) : pass;
+            if (wanted < 1 || wanted > 32 || !(mk.endings & (1u << (wanted - 1)))) {
+                ++i;
+                continue;
+            }
+        }
+        order.push_back(i);
+
+        const bool alFine = jumped == JumpDCalFine || jumped == JumpDSalFine;
+        const bool alCoda = jumped == JumpDCalCoda || jumped == JumpDSalCoda;
+        if (alFine && mk.jump == JumpFine) break;
+        if (alCoda && mk.jump == JumpToCoda) {
+            int c = i + 1;
+            while (c < n && !marksAt(c).coda) ++c;
+            if (c >= n) break;
+            i = c;
+            continue;
+        }
+        if (mk.repeatEnd && !jumped) {
+            int& times = played[i];
+            ++times;
+            if (times < std::max(2, mk.repeatTimes)) {
+                pass = times + 1;
+                i = repeatStart;
+                looping = true;
+                continue;
+            }
+            pass = 1;
+            repeatStart = i + 1;
+        }
+        if (!jumped && mk.jump >= JumpDC && mk.jump <= JumpDSalCoda) {
+            jumped = mk.jump;
+            int target = 0;
+            if (mk.jump >= JumpDS) {
+                for (int k = 0; k < n; ++k)
+                    if (marksAt(k).segno) { target = k; break; }
+            }
+            i = target;
+            continue;
+        }
+        ++i;
+    }
+    return order;
 }
 
 void Score::setMeasureCount(int n)
@@ -326,6 +408,56 @@ QString clefName(Clef clef)
     case Clef::Tenor:  return QStringLiteral("Clave de Dó (4ª)");
     }
     return QString();
+}
+
+namespace {
+struct JumpInfo { const char* key; const char* text; };
+const JumpInfo kJumps[JumpCount] = {
+    { "", "" }, { "fine", "Fine" }, { "dc", "D.C." }, { "dcalfine", "D.C. al Fine" }, { "dcalcoda", "D.C. al Coda" },
+    { "ds", "D.S." }, { "dsalfine", "D.S. al Fine" }, { "dsalcoda", "D.S. al Coda" }, { "tocoda", "To Coda" },
+};
+} // namespace
+
+QString jumpText(int jump)
+{
+    return jump > 0 && jump < JumpCount ? QString::fromUtf8(kJumps[jump].text) : QString();
+}
+
+QString jumpKey(int jump)
+{
+    return jump > 0 && jump < JumpCount ? QString::fromLatin1(kJumps[jump].key) : QString();
+}
+
+int jumpFromKey(const QString& key)
+{
+    for (int j = 1; j < JumpCount; ++j)
+        if (key == QLatin1String(kJumps[j].key)) return j;
+    return JumpNone;
+}
+
+QString endingLabel(unsigned endings)
+{
+    QStringList parts;
+    for (int k = 0; k < 32; ++k)
+        if (endings & (1u << k)) parts << QStringLiteral("%1.").arg(k + 1);
+    return parts.join(QStringLiteral(", "));
+}
+
+unsigned endingsFromLabel(const QString& s)
+{
+    unsigned out = 0;
+    QString digits;
+    auto flush = [&] {
+        const int k = digits.toInt();
+        if (k >= 1 && k <= 32) out |= 1u << (k - 1);
+        digits.clear();
+    };
+    for (QChar c : s) {
+        if (c.isDigit()) digits += c;
+        else flush();
+    }
+    flush();
+    return out;
 }
 
 } // namespace pauta

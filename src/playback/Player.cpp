@@ -68,7 +68,8 @@ void Player::tick()
     const auto& st = m_seq.measureStart;
     if (!st.empty()) {
         const auto it = std::upper_bound(st.begin(), st.end(), now);
-        const int m = m_seq.fromMeasure + int(it - st.begin()) - 1;
+        const size_t idx = size_t(std::max<ptrdiff_t>(0, it - st.begin() - 1));
+        const int m = idx < m_seq.order.size() ? m_seq.order[idx] : m_seq.fromMeasure;
         if (m != m_measure && now < m_seq.length) {
             m_measure = m;
             emit measureChanged(m);

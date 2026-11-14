@@ -35,5 +35,6 @@ XML UTF-8, legível e editável à mão.
   sempre explícita; a armadura só decide quais acidentes aparecem.
 - Camadas (vozes, como no Finale): a camada 1 fica direto em `<measure>`; as camadas 2–4 ficam em `<voice n="2">…</voice>` dentro do compasso.
 - Mudanças no meio da peça ficam no `<measure>` onde começam: `time="3/4"` e `key="-3"` (no compasso da primeira pauta) e `clef="bass"` (no compasso da pauta que muda).
+- Repetições ficam nos `<measure>` da primeira pauta: `repeatStart="1"` (|: no início), `repeatEnd="2"` (:| no fim; o número é quantas vezes o trecho é tocado), `endings="1,2"` (casa de 1ª/2ª vez sobre o compasso), `bar="double|final"`, `segno="1"`, `coda="1"` e `jump="fine|dc|dcalfine|dcalcoda|ds|dsalfine|dsalcoda|tocoda"` (instrução no fim do compasso).
 - Todas as pautas têm o mesmo número de compassos.
 - Arquivos com `version` maior que a suportada são recusados.

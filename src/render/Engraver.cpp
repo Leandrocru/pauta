@@ -25,6 +25,9 @@ constexpr qreal kStemLen = 3.5;
 constexpr qreal kAccColW = 1.15;
 constexpr qreal kMeasureLeftPad = 1.0;
 constexpr qreal kMeasureRightPad = 0.8;
+constexpr qreal kRepeatStartW = 1.9; // room taken by |: at the start of a measure
+constexpr qreal kRepeatEndW = 1.5;   // room taken by :| at the end of a measure
+constexpr qreal kRepeatDotR = 0.22;
 constexpr qreal kStaffGap = 7.0;   // between bottom line of one staff and top line of the next
 constexpr qreal kSystemGap = 9.0;  // between systems
 
@@ -415,7 +418,19 @@ private:
         qreal chordBase = 0; // baseline of chord symbols, relative to the staff's top line (negative = above)
         qreal below = 0;     // extra room needed under the bottom line
         qreal above = 0;     // extra room needed over the top line
+        qreal markBase = 0;  // top staff: baseline of endings/segno/jump texts (negative = above)
     };
+    bool hasMarksAbove(int first, int last) const
+    {
+        for (int m = first; m <= last; ++m) {
+            const MeasureMarks mk = m_score.marksAt(m);
+            if (mk.endings || mk.segno || mk.coda || mk.jump) return true;
+        }
+        return false;
+    }
+    // Barlines and repeat signs.
+    void repeatDots(PageLayout& pg, qreal cx, qreal staffTop);
+    void drawRepeatMarks(PageLayout& pg, const System& sys, const std::vector<qreal>& x0s, const std::vector<qreal>& x1s, qreal sysTop);
     std::vector<StaffBand> bandsFor(int first, int last) const;
     std::vector<qreal> offsetsFor(const std::vector<StaffBand>& bands) const;
     qreal systemHeightFor(int first, int last) const { return offsetsFor(bandsFor(first, last)).back() + 4 * m_sp; }
@@ -909,6 +924,16 @@ std::vector<Builder::StaffBand> Builder::bandsFor(int first, int last) const
         // Chord symbols: over the staff and over high notes.
         b.chordBase = std::min(-2.0 * sp, (4 - top) * sp / 2 - 1.4 * sp);
         if (b.chords) b.above = -b.chordBase + 1.8 * sp;
+        // Endings, segno/coda and jump texts: over the top staff, above chord symbols.
+        b.markBase = std::min(-3.0 * sp, b.chords ? b.chordBase - 2.4 * sp : b.chordBase - 0.6 * sp);
+        if (s == 0 && hasMarksAbove(first, last)) {
+            bool stacked = false; // segno/jump over a measure that also has an ending bracket
+            for (int mm = first; mm <= last; ++mm) {
+                const MeasureMarks mk = m_score.marksAt(mm);
+                stacked |= mk.endings && (mk.segno || mk.coda || mk.jump);
+            }
+            b.above = std::max(b.above, -b.markBase + (stacked ? 6.0 : 3.6) * sp);
+        }
     }
     return bands;
 }
@@ -1234,10 +1259,24 @@ void Builder::drawSystem(const System& sys, int pageIdx, qreal left, qreal top, 
     }
 
     qreal mx = left + sys.headerW;
+    std::vector<qreal> measureX0, measureX1; // content start / end of each measure of the system
     for (int m = sys.first; m <= sys.last; ++m) {
         const MeasureSpacing& ms = m_spacing[size_t(m)];
         const qreal pre = m > sys.first ? ms.prefix : 0; // clef/key/time change drawn at the measure start
         const qreal w = ms.width(sys.stretch) + pre;
+        const MeasureMarks mk = m_score.marksAt(m);
+        measureX0.push_back(mx + pre);
+        measureX1.push_back(mx + w);
+        if (mk.repeatStart) {
+            // Thick + thin line and dots. Right after a plain barline, the thick line replaces it.
+            const MeasureMarks prev = m_score.marksAt(m - 1);
+            const bool prevThick = m > sys.first && pre == 0 && (prev.repeatEnd || prev.bar == BarStyle::Final);
+            const qreal x0 = mx + pre + (m == sys.first ? 0.4 * m_sp : 0);
+            if (!prevThick) line(pg, x0 + (kThickBarW / 2) * m_sp, sysTop, x0 + (kThickBarW / 2) * m_sp, sysBottom, kThickBarW);
+            const qreal tx = x0 + (kThickBarW + 0.4 + kThinBarW / 2) * m_sp;
+            line(pg, tx, sysTop, tx, sysBottom, kThinBarW);
+            for (int s = 0; s < nStaves; ++s) repeatDots(pg, tx + (0.45 + kRepeatDotR) * m_sp, top + m_offsets[size_t(s)]);
+        }
         for (int s = 0; s < nStaves; ++s) {
             const qreal st = top + m_offsets[size_t(s)];
             const Measure& meas = m_score.staves[size_t(s)].measures[size_t(m)];
@@ -1284,13 +1323,86 @@ void Builder::drawSystem(const System& sys, int pageIdx, qreal left, qreal top, 
         }
         mx += w;
         const bool last = m == m_score.measureCount() - 1;
-        if (last) {
+        const MeasureMarks next = m_score.marksAt(m + 1);
+        if (mk.repeatEnd || last || mk.bar == BarStyle::Final) {
             line(pg, mx - (kThickBarW / 2) * m_sp, sysTop, mx - (kThickBarW / 2) * m_sp, sysBottom, kThickBarW);
-            const qreal tx = mx - (kThickBarW + 0.6 + kThinBarW / 2) * m_sp;
+            const qreal tx = mx - (kThickBarW + (mk.repeatEnd ? 0.4 : 0.6) + kThinBarW / 2) * m_sp;
             line(pg, tx, sysTop, tx, sysBottom, kThinBarW);
-        } else {
+            if (mk.repeatEnd) {
+                for (int s = 0; s < nStaves; ++s) repeatDots(pg, tx - (0.45 + kRepeatDotR) * m_sp, top + m_offsets[size_t(s)]);
+                if (mk.repeatTimes > 2) { // "3x" over the barline
+                    pg.texts.push_back({ QStringLiteral("%1x").arg(mk.repeatTimes), QPointF(mx, sysTop - 1.0 * m_sp), 9, false, true, -1 });
+                }
+            }
+        } else if (mk.bar == BarStyle::Double) {
             const qreal bx = mx - (kThinBarW / 2) * m_sp;
             line(pg, bx, sysTop, bx, sysBottom, kThinBarW);
+            line(pg, bx - 0.5 * m_sp, sysTop, bx - 0.5 * m_sp, sysBottom, kThinBarW);
+        } else if (!(next.repeatStart && m < sys.last && m_spacing[size_t(m + 1)].prefix == 0)) {
+            const qreal bx = mx - (kThinBarW / 2) * m_sp;
+            line(pg, bx, sysTop, bx, sysBottom, kThinBarW);
+        }
+    }
+    if (hasMarksAbove(sys.first, sys.last)) drawRepeatMarks(pg, sys, measureX0, measureX1, sysTop);
+}
+
+void Builder::repeatDots(PageLayout& pg, qreal cx, qreal staffTop)
+{
+    const qreal r = kRepeatDotR * m_sp;
+    QPainterPath path;
+    path.addEllipse(QPointF(cx, staffTop + 1.5 * m_sp), r, r);
+    path.addEllipse(QPointF(cx, staffTop + 2.5 * m_sp), r, r);
+    pg.fills.push_back(path);
+}
+
+// Endings (volta brackets), segno, coda and jump instructions over the top staff of a system.
+void Builder::drawRepeatMarks(PageLayout& pg, const System& sys, const std::vector<qreal>& x0s, const std::vector<qreal>& x1s, qreal sysTop)
+{
+    const qreal sp = m_sp;
+    const qreal base = sysTop + m_bands.front().markBase; // text baseline
+    const qreal bracketY = base - 1.4 * sp;              // ending bracket line
+
+    for (int m = sys.first; m <= sys.last; ++m) {
+        const size_t i = size_t(m - sys.first);
+        const MeasureMarks mk = m_score.marksAt(m);
+
+        // Ending: one bracket over each run of measures with the same numbers.
+        if (mk.endings && (m == sys.first || m_score.marksAt(m - 1).endings != mk.endings)) {
+            int e = m;
+            while (e < sys.last && m_score.marksAt(e + 1).endings == mk.endings) ++e;
+            const bool opens = m == 0 || m_score.marksAt(m - 1).endings != mk.endings;
+            int realEnd = e;
+            while (realEnd + 1 < m_score.measureCount() && m_score.marksAt(realEnd + 1).endings == mk.endings) ++realEnd;
+            const bool closes = realEnd == e && m_score.marksAt(e).repeatEnd;
+            const qreal xa = x0s[i] + (mk.repeatStart ? 0.2 * sp : 0.3 * sp);
+            const qreal xb = x1s[size_t(e - sys.first)] - (realEnd == e ? 0.6 * sp : 0);
+            line(pg, xa, bracketY, xb, bracketY, 0.13);
+            if (opens) {
+                line(pg, xa, bracketY, xa, bracketY + 2.2 * sp, 0.13);
+                pg.texts.push_back({ endingLabel(mk.endings), QPointF(xa + 0.5 * sp, bracketY + 1.9 * sp), 10, true, false, 0 });
+            }
+            if (closes) line(pg, xb, bracketY, xb, bracketY + 2.2 * sp, 0.13);
+        }
+
+        // Segno / coda at the start of the measure.
+        qreal gx = x0s[i] + 0.3 * sp;
+        for (const auto [on, cp] : { std::pair{ mk.segno, char16_t(0xE047) }, std::pair{ mk.coda, char16_t(0xE048) } }) {
+            if (!on) continue;
+            const QRectF bb = m_font.bbox(cp, sp);
+            glyph(pg, cp, gx - bb.left(), base - (mk.endings ? 2.6 * sp : 0));
+            gx += bb.width() + 0.5 * sp;
+        }
+
+        // Jump / Fine at the end of the measure, right-aligned.
+        if (mk.jump) {
+            qreal xr = x1s[i] - 0.4 * sp;
+            const qreal y = base - (mk.endings ? 2.6 * sp : 0);
+            if (mk.jump == JumpToCoda) {
+                const QRectF bb = m_font.bbox(0xE048, sp);
+                glyph(pg, 0xE048, xr - bb.right(), y);
+                xr -= bb.width() + 0.5 * sp;
+            }
+            pg.texts.push_back({ jumpText(mk.jump), QPointF(xr, y), 11, true, true, -1 });
         }
     }
 }
@@ -1306,6 +1418,15 @@ Layout Builder::run()
     for (int m = 0; m < nMeasures; ++m) {
         m_spacing.push_back(computeSpacing(m_score, m, m_sp, m_headW));
         m_spacing.back().prefix = changePrefix(m);
+        const MeasureMarks mk = m_score.marksAt(m);
+        MeasureSpacing& ms = m_spacing.back();
+        if (mk.repeatStart) { // |: before the first note
+            const qreal w = kRepeatStartW * m_sp;
+            for (qreal& f : ms.fixedAt) f += w;
+            ms.fixedTotal += w;
+        }
+        if (mk.repeatEnd) ms.fixedTotal += kRepeatEndW * m_sp;
+        else if (mk.bar == BarStyle::Double) ms.fixedTotal += 0.4 * m_sp;
     }
 
     // Scroll view: one endless system on a single strip, no title, natural spacing.
