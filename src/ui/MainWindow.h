@@ -20,6 +20,7 @@ namespace playback { class Player; }
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
+    void showPart(int part); // -1 = full score
     explicit MainWindow(QWidget* parent = nullptr);
     bool openFile(const QString& path);
     Editor* editor() const { return m_editor; }
@@ -85,6 +86,9 @@ private:
     playback::Player* m_player = nullptr;
     QAction* m_playAction = nullptr;
     QSpinBox* m_tempoBox = nullptr;
+    QComboBox* m_partBox = nullptr; // "Ver": full score or one part
+    void refreshParts();
+    void exportPartsPdf();
     Tool m_tool = Tool::SpeedyEntry;
     QString m_path;
     bool m_updatingNav = false;

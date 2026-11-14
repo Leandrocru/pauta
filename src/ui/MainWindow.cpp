@@ -18,6 +18,9 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QComboBox>
+#include <QDir>
+#include <QRegularExpression>
+#include <QSignalBlocker>
 #include <QHBoxLayout>
 #include <QCheckBox>
 #include <QDialogButtonBox>
@@ -150,6 +153,7 @@ void MainWindow::buildMenus()
     disabledAction(imp, QStringLiteral("Finale (.musx)…"));
     QMenu* exp = file->addMenu(QStringLiteral("&Exportar"));
     exp->addAction(QStringLiteral("&PDF…"), QKeySequence(QStringLiteral("Ctrl+Shift+E")), this, &MainWindow::exportPdf);
+    exp->addAction(QStringLiteral("Partes em PDF (uma por instrumento)…"), this, &MainWindow::exportPartsPdf);
     exp->addAction(QStringLiteral("&MusicXML (.musicxml, .mxl)…"), QKeySequence(QStringLiteral("Ctrl+Shift+X")), this, [this] {
         const QString base = m_path.isEmpty() ? QStringLiteral("partitura.musicxml")
                                               : QFileInfo(m_path).completeBaseName() + QStringLiteral(".musicxml");
@@ -218,6 +222,21 @@ void MainWindow::buildMenus()
     doc->addSeparator();
     doc->addAction(QStringLiteral("Adicionar &pauta…"), this, &MainWindow::addStaffDialog);
     doc->addAction(QStringLiteral("Adicionar &compassos…"), this, &MainWindow::addMeasuresDialog);
+    doc->addSeparator();
+    QMenu* partsMenu = doc->addMenu(QStringLiteral("&Editar parte"));
+    connect(partsMenu, &QMenu::aboutToShow, this, [this, partsMenu] {
+        partsMenu->clear();
+        auto* group = new QActionGroup(partsMenu);
+        for (int i = 0; i < m_partBox->count(); ++i) {
+            QAction* a = partsMenu->addAction(m_partBox->itemText(i));
+            a->setCheckable(true);
+            a->setChecked(i == m_partBox->currentIndex());
+            group->addAction(a);
+            const int part = m_partBox->itemData(i).toInt();
+            connect(a, &QAction::triggered, this, [this, part] { showPart(part); });
+            if (i == 0) partsMenu->addSeparator();
+        }
+    });
 
     QMenu* midi = menuBar()->addMenu(QStringLiteral("&MIDI/Áudio"));
     m_playAction = midi->addAction(icons::transport(icons::Transport::Play), QStringLiteral("&Reproduzir / parar"));
@@ -496,6 +515,16 @@ void MainWindow::buildNavigationBar()
     nav->setIconSize(QSize(18, 18));
     addToolBar(Qt::BottomToolBarArea, nav);
 
+    nav->addWidget(new QLabel(QStringLiteral(" Ver ")));
+    m_partBox = new QComboBox;
+    m_partBox->setFocusPolicy(Qt::ClickFocus);
+    m_partBox->setToolTip(QStringLiteral("Grade completa ou a parte de um instrumento. O que você edita na parte muda a grade."));
+    m_partBox->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    nav->addWidget(m_partBox);
+    connect(m_partBox, &QComboBox::activated, this, [this](int i) { showPart(m_partBox->itemData(i).toInt()); });
+    connect(m_editor, &Editor::scoreChanged, this, &MainWindow::refreshParts);
+    refreshParts();
+    nav->addSeparator();
     nav->addWidget(new QLabel(QStringLiteral(" Página ")));
     m_pageBox = new QSpinBox;
     m_pageBox->setMinimum(1);
@@ -1063,11 +1092,58 @@ void MainWindow::exportPdf()
     const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("Exportar PDF"), base, QStringLiteral("PDF (*.pdf)"));
     if (path.isEmpty()) return;
     // Always export the page view, even when the scroll view is on screen.
-    const Layout layout = m_view->continuous() ? engrave(m_editor->score()) : m_view->layout();
+    const Layout layout = m_view->continuous() ? engrave(m_editor->score(), m_view->pageOptions()) : m_view->layout();
     if (!pauta::exportPdf(layout, path, m_editor->score().title))
         QMessageBox::warning(this, QStringLiteral("Erro"), QStringLiteral("Não foi possível criar o PDF."));
     else
         statusBar()->showMessage(QStringLiteral("PDF exportado: %1").arg(path), 4000);
+}
+
+void MainWindow::refreshParts()
+{
+    if (!m_partBox) return;
+    const auto parts = m_editor->score().parts();
+    const int shown = m_view->part() < int(parts.size()) ? m_view->part() : -1;
+    QSignalBlocker block(m_partBox);
+    m_partBox->clear();
+    m_partBox->addItem(QStringLiteral("Grade"), -1);
+    for (int i = 0; i < int(parts.size()); ++i)
+        m_partBox->addItem(parts[size_t(i)].name.isEmpty() ? QStringLiteral("Parte %1").arg(i + 1) : parts[size_t(i)].name, i);
+    m_partBox->setCurrentIndex(m_partBox->findData(shown));
+}
+
+void MainWindow::showPart(int part)
+{
+    m_view->setPart(part);
+    m_partBox->setCurrentIndex(m_partBox->findData(m_view->part()));
+    statusBar()->showMessage(m_view->part() < 0 ? QStringLiteral("Mostrando a grade")
+                                                : QStringLiteral("Mostrando a parte: %1 (as mudanças valem também para a grade)")
+                                                      .arg(m_partBox->currentText()), 4000);
+    m_view->setFocus();
+}
+
+void MainWindow::exportPartsPdf()
+{
+    const Score& s = m_editor->score();
+    const auto parts = s.parts();
+    const QString dir = QFileDialog::getExistingDirectory(this, QStringLiteral("Pasta para as partes em PDF"),
+                                                          m_path.isEmpty() ? QString() : QFileInfo(m_path).absolutePath());
+    if (dir.isEmpty()) return;
+    const QString base = m_path.isEmpty() ? (s.title.isEmpty() ? QStringLiteral("partitura") : s.title) : QFileInfo(m_path).completeBaseName();
+    QStringList done, failed;
+    for (int i = 0; i < int(parts.size()); ++i) {
+        EngraveOptions opt;
+        opt.part = i;
+        opt.multiRests = true;
+        QString name = parts[size_t(i)].name.isEmpty() ? QStringLiteral("Parte %1").arg(i + 1) : parts[size_t(i)].name;
+        name.replace(QRegularExpression(QStringLiteral("[\\/:*?\"<>|]")), QStringLiteral("_"));
+        const QString path = QDir(dir).filePath(QStringLiteral("%1 - %2.pdf").arg(base, name));
+        (pauta::exportPdf(engrave(s, opt), path, s.title + QStringLiteral(" — ") + name) ? done : failed) << QFileInfo(path).fileName();
+    }
+    if (!failed.isEmpty())
+        QMessageBox::warning(this, QStringLiteral("Partes em PDF"), QStringLiteral("Não foi possível criar:\n") + failed.join(QLatin1Char('\n')));
+    else
+        statusBar()->showMessage(QStringLiteral("%1 parte(s) exportada(s) em %2").arg(done.size()).arg(dir), 5000);
 }
 
 void MainWindow::print()
@@ -1077,7 +1153,7 @@ void MainWindow::print()
     printer.setDocName(m_editor->score().title);
     QPrintDialog dlg(&printer, this);
     if (dlg.exec() != QDialog::Accepted) return;
-    const Layout layout = engrave(m_editor->score());
+    const Layout layout = engrave(m_editor->score(), m_view->pageOptions());
     QPainter p(&printer);
     const QRectF page = printer.pageRect(QPrinter::DevicePixel);
     const qreal k = std::min(page.width() / layout.pageWidth, page.height() / layout.pageHeight);

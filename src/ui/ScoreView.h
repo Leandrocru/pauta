@@ -1,6 +1,7 @@
 #pragma once
 // Score canvas: page view or scroll view, paints only visible pages, and interprets mouse and
 // keyboard according to the active tool of the main tool palette.
+#include "render/Engraver.h"
 #include "render/Layout.h"
 #include "ui/Tools.h"
 
@@ -24,6 +25,11 @@ public:
     void setTool(Tool t);
     bool continuous() const { return m_continuous; }
     void setContinuous(bool c);
+    // Linked parts: -1 shows the full score, otherwise one instrument (index into Score::parts()).
+    // Edits made in a part change the score itself.
+    int part() const { return m_part; }
+    void setPart(int part);
+    EngraveOptions pageOptions() const; // page layout of what is shown (for PDF and printing)
     void setSimpleRestMode(bool rest) { m_simpleRest = rest; update(); }
     void setPlaybackMeasure(int measure); // -1 = none
     void setArmedArticulation(unsigned a) { m_armedArtic = a; }
@@ -87,6 +93,7 @@ private:
     double m_layoutMs = 0;
     Tool m_tool = Tool::SpeedyEntry;
     bool m_continuous = false;
+    int m_part = -1;
     bool m_simpleRest = false;
     int m_playMeasure = -1;
     unsigned m_armedArtic = 1; // ArticStaccato

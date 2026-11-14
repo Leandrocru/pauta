@@ -133,6 +133,7 @@ int main(int argc, char* argv[])
     QCommandLineOption mouseOpt(QStringLiteral("test-mouse"),
         QStringLiteral("(teste) Ações de mouse: \"move|click:compasso:alvo:altura\" (alvo = fim ou índice da nota; altura = diatônico, 34 = Si4)."),
         QStringLiteral("acoes"));
+    QCommandLineOption partOpt(QStringLiteral("part"), QStringLiteral("(teste) Mostra a parte N (1 = primeiro instrumento)."), QStringLiteral("N"));
     QCommandLineOption menuOpt(QStringLiteral("menu-action"), QStringLiteral("(teste) Aciona o item de menu com este texto."), QStringLiteral("texto"));
     QCommandLineOption dialogGrabOpt(QStringLiteral("grab-dialog"), QStringLiteral("(teste) Captura a janela de diálogo que abrir e a confirma."), QStringLiteral("arquivo.png"));
     QCommandLineOption whatsNewGrabOpt(QStringLiteral("grab-whats-new"), QStringLiteral("(teste) Captura a janela de novidades."), QStringLiteral("arquivo.png"));
@@ -140,7 +141,7 @@ int main(int argc, char* argv[])
     QCommandLineOption updCheckOpt(QStringLiteral("update-check"), QStringLiteral("(teste) Consulta a última versão no GitHub e sai."));
     QCommandLineOption playCheckOpt(QStringLiteral("playback-check"), QStringLiteral("(teste) Monta a sequência de reprodução e abre a saída de som, sem tocar."));
     QCommandLineOption iconOpt(QStringLiteral("write-icon"), QStringLiteral("(desenvolvimento) Gera o ícone do programa."), QStringLiteral("pasta"));
-    cli.addOptions({ pdfOpt, pngOpt, benchOpt, emptyOpt, keysOpt, grabOpt, savePauta, toolOpt, scrollOpt, selectOpt, iconOpt, playCheckOpt, mouseOpt, updCheckOpt, whatsNewGrabOpt, mxlOutOpt, menuOpt, dialogGrabOpt });
+    cli.addOptions({ pdfOpt, pngOpt, benchOpt, emptyOpt, keysOpt, grabOpt, savePauta, toolOpt, scrollOpt, selectOpt, iconOpt, playCheckOpt, mouseOpt, updCheckOpt, whatsNewGrabOpt, mxlOutOpt, menuOpt, dialogGrabOpt, partOpt });
     cli.addPositionalArgument(QStringLiteral("partitura"), QStringLiteral("Arquivo .pauta ou MusicXML a abrir."));
     cli.process(app);
 
@@ -243,7 +244,12 @@ int main(int argc, char* argv[])
             qCritical("%s", qPrintable(err));
             return 1;
         }
-        const Layout l = engrave(s);
+        EngraveOptions opt;
+        if (cli.isSet(partOpt)) {
+            opt.part = cli.value(partOpt).toInt() - 1;
+            opt.multiRests = true;
+        }
+        const Layout l = engrave(s, opt);
         bool ok = true;
         if (cli.isSet(pdfOpt)) ok &= exportPdf(l, cli.value(pdfOpt), s.title);
         if (cli.isSet(pngOpt)) ok &= exportPng(l, 0, cli.value(pngOpt));
@@ -261,6 +267,7 @@ int main(int argc, char* argv[])
     if (testMode) {
         w.setTool(cli.isSet(toolOpt) ? Tool(cli.value(toolOpt).toInt()) : Tool::SpeedyEntry);
         if (cli.isSet(scrollOpt)) w.view()->setContinuous(true);
+        if (cli.isSet(partOpt)) w.showPart(cli.value(partOpt).toInt() - 1);
     }
     w.show();
     if (!testMode && args.isEmpty() && !cli.isSet(emptyOpt)) w.runLaunchWindow();

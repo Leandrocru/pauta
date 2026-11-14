@@ -59,7 +59,8 @@ void ScoreView::relayout()
     m_hover = Hit{}; // slot pointers die with the old layout (recomputed below)
     QElapsedTimer t;
     t.start();
-    EngraveOptions opt;
+    if (m_part >= int(m_ed->score().parts().size())) m_part = -1; // the instrument was deleted
+    EngraveOptions opt = pageOptions();
     opt.continuous = m_continuous;
     m_layout = engrave(m_ed->score(), opt);
     m_layoutMs = double(t.nsecsElapsed()) / 1e6;
@@ -69,6 +70,34 @@ void ScoreView::relayout()
     // Keep the Simple Entry preview under the mouse after the score changed (e.g. after a click).
     if (m_tool == Tool::SimpleEntry && underMouse()) m_hover = hitTest(mapFromGlobal(QCursor::pos()));
     update();
+}
+
+EngraveOptions ScoreView::pageOptions() const
+{
+    EngraveOptions opt;
+    opt.part = m_part;
+    opt.multiRests = m_part >= 0;
+    return opt;
+}
+
+void ScoreView::setPart(int part)
+{
+    const auto parts = m_ed->score().parts();
+    if (part >= int(parts.size())) part = -1;
+    if (part == m_part) return;
+    m_part = part;
+    relayout();
+    if (part >= 0) {
+        // Keep the cursor on a staff of the part.
+        Cursor c = m_ed->cursor();
+        const PartRange& pr = parts[size_t(part)];
+        if (!pr.contains(c.staff)) {
+            c.staff = pr.firstStaff;
+            c.index = std::min(c.index, int(m_ed->score().staves[size_t(c.staff)].measures[size_t(c.measure)].voice(c.voice).size()));
+            m_ed->setCursor(c);
+        }
+    }
+    onCursorChanged();
 }
 
 void ScoreView::setContinuous(bool c)

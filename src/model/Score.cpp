@@ -190,6 +190,22 @@ void Score::removeMeasures(int first, int last)
     shiftChanges(marks, last + 1, -count, first, last, 0);
 }
 
+std::vector<PartRange> Score::parts() const
+{
+    std::vector<PartRange> out;
+    for (int i = 0; i < int(staves.size()); ++i) {
+        if (out.empty() || !staves[size_t(i)].name.isEmpty()) {
+            PartRange p;
+            p.name = staves[size_t(i)].name; // may be empty (an unnamed first staff stays unnamed)
+            p.firstStaff = i;
+            out.push_back(p);
+        } else {
+            out.back().staffCount++;
+        }
+    }
+    return out;
+}
+
 std::vector<int> Score::playOrder(int fromMeasure) const
 {
     const int n = measureCount();

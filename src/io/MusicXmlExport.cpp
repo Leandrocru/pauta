@@ -92,27 +92,8 @@ bool writeHarmony(QXmlStreamWriter& w, const QString& chord, const QString& staf
 }
 
 // A part = a named staff plus the unnamed staves right after it (e.g. piano treble + bass).
-struct Part {
-    QString name;
-    int firstStaff = 0;
-    int staffCount = 1;
-};
-
-std::vector<Part> groupParts(const Score& s)
-{
-    std::vector<Part> parts;
-    for (int i = 0; i < int(s.staves.size()); ++i) {
-        if (parts.empty() || !s.staves[size_t(i)].name.isEmpty()) {
-            Part p;
-            p.name = s.staves[size_t(i)].name; // may be empty (an unnamed staff stays unnamed)
-            p.firstStaff = i;
-            parts.push_back(p);
-        } else {
-            parts.back().staffCount++;
-        }
-    }
-    return parts;
-}
+using Part = PartRange;
+std::vector<Part> groupParts(const Score& s) { return s.parts(); }
 
 // Divisions per quarter note so that every duration is a whole number.
 int64_t divisionsFor(const Score& s)

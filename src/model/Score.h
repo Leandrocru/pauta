@@ -135,6 +135,14 @@ struct MeasureMarks {
     bool operator==(const MeasureMarks&) const = default;
 };
 
+// An instrument: a named staff plus the unnamed staves right after it (e.g. piano treble + bass).
+struct PartRange {
+    QString name;
+    int firstStaff = 0;
+    int staffCount = 1;
+    bool contains(int staff) const { return staff >= firstStaff && staff < firstStaff + staffCount; }
+};
+
 struct Score {
     QString title;
     QString composer;
@@ -160,6 +168,7 @@ struct Score {
     // Measures in the order they are played (repeats, endings, D.C./D.S., Fine and Coda unrolled).
     std::vector<int> playOrder(int fromMeasure = 0) const;
 
+    std::vector<PartRange> parts() const;
     int measureCount() const { return staves.empty() ? 0 : int(staves.front().measures.size()); }
     TimeSig timeAt(int measure) const;
     int keyAt(int measure) const;

@@ -466,7 +466,10 @@ private:
     const Font& m_font;
     qreal m_headW = 0;
     std::vector<MeasureSpacing> m_spacing;
+    std::vector<int> m_multi; // per measure: n > 1 = first measure of an n-measure rest, -1 = inside one, 0 = normal
     Layout m_layout;
+    void findMultiRests();
+    void drawMultiRest(PageLayout& pg, qreal x0, qreal x1, qreal staffTop, int count);
 };
 
 qreal Builder::clefColumnWidth(int measure) const
@@ -1267,6 +1270,18 @@ void Builder::drawSystem(const System& sys, int pageIdx, qreal left, qreal top, 
         const MeasureMarks mk = m_score.marksAt(m);
         measureX0.push_back(mx + pre);
         measureX1.push_back(mx + w);
+        if (m_multi[size_t(m)] < 0) {
+            // Inside a multi-measure rest: same place as the rest (for the cursor and clicks), nothing drawn.
+            for (int s = 0; s < nStaves; ++s) {
+                MeasureSlot slot = *m_layout.slot(s, m - 1);
+                slot.measure = m;
+                m_layout.measureSlots.push_back(slot);
+            }
+            measureX0.back() = measureX0[measureX0.size() - 2];
+            measureX1.back() = measureX1[measureX1.size() - 2];
+            continue;
+        }
+        const int lastOfGroup = m_multi[size_t(m)] > 1 ? m + m_multi[size_t(m)] - 1 : m;
         if (mk.repeatStart) {
             // Thick + thin line and dots. Right after a plain barline, the thick line replaces it.
             const MeasureMarks prev = m_score.marksAt(m - 1);
@@ -1292,7 +1307,10 @@ void Builder::drawSystem(const System& sys, int pageIdx, qreal left, qreal top, 
             slot.lyricBase = st + m_bands[size_t(s)].lyricBase;
             slot.chordBase = st + m_bands[size_t(s)].chordBase;
             if (pre > 0) drawChanges(pg, s, m, mx, st);
-            if (meas.isEmpty()) {
+            if (m_multi[size_t(m)] > 1) {
+                drawMultiRest(pg, mx + pre, mx + w, st, m_multi[size_t(m)]);
+                for (int v = 0; v < kVoices; ++v) m_pendingTies[size_t(s * kVoices + v)].clear();
+            } else if (meas.isEmpty()) {
                 drawMeasureRest(pg, mx + pre, mx + w, st);
                 for (int v = 0; v < kVoices; ++v) m_pendingTies[size_t(s * kVoices + v)].clear();
             }
@@ -1322,8 +1340,8 @@ void Builder::drawSystem(const System& sys, int pageIdx, qreal left, qreal top, 
             m_layout.measureSlots.push_back(std::move(slot));
         }
         mx += w;
-        const bool last = m == m_score.measureCount() - 1;
-        const MeasureMarks next = m_score.marksAt(m + 1);
+        const bool last = lastOfGroup == m_score.measureCount() - 1;
+        const MeasureMarks next = m_score.marksAt(lastOfGroup + 1);
         if (mk.repeatEnd || last || mk.bar == BarStyle::Final) {
             line(pg, mx - (kThickBarW / 2) * m_sp, sysTop, mx - (kThickBarW / 2) * m_sp, sysBottom, kThickBarW);
             const qreal tx = mx - (kThickBarW + (mk.repeatEnd ? 0.4 : 0.6) + kThinBarW / 2) * m_sp;
@@ -1338,12 +1356,70 @@ void Builder::drawSystem(const System& sys, int pageIdx, qreal left, qreal top, 
             const qreal bx = mx - (kThinBarW / 2) * m_sp;
             line(pg, bx, sysTop, bx, sysBottom, kThinBarW);
             line(pg, bx - 0.5 * m_sp, sysTop, bx - 0.5 * m_sp, sysBottom, kThinBarW);
-        } else if (!(next.repeatStart && m < sys.last && m_spacing[size_t(m + 1)].prefix == 0)) {
+        } else if (!(next.repeatStart && lastOfGroup < sys.last && m_spacing[size_t(lastOfGroup + 1)].prefix == 0)) {
             const qreal bx = mx - (kThinBarW / 2) * m_sp;
             line(pg, bx, sysTop, bx, sysBottom, kThinBarW);
         }
     }
     if (hasMarksAbove(sys.first, sys.last)) drawRepeatMarks(pg, sys, measureX0, measureX1, sysTop);
+}
+
+// Runs of measures that are empty in every staff, without repeats, jumps or changes inside.
+void Builder::findMultiRests()
+{
+    const int n = m_score.measureCount();
+    auto restOnly = [&](int m) {
+        for (const Staff& st : m_score.staves)
+            if (!st.measures[size_t(m)].isEmpty()) return false;
+        return m_score.marksAt(m).isEmpty();
+    };
+    auto changes = [&](int m) {
+        if (m_score.timeChangesAt(m) || m_score.keyChangesAt(m)) return true;
+        for (int s = 0; s < int(m_score.staves.size()); ++s)
+            if (m_score.clefChangesAt(s, m)) return true;
+        return false;
+    };
+    for (int m = 0; m < n;) {
+        if (!restOnly(m)) { ++m; continue; }
+        int e = m;
+        while (e + 1 < n && restOnly(e + 1) && !changes(e + 1)) ++e;
+        if (e > m) {
+            m_multi[size_t(m)] = e - m + 1;
+            MeasureSpacing& ms = m_spacing[size_t(m)];
+            ms.fixedTotal = ms.fixedAt.empty() ? 0 : ms.fixedAt.front();
+            ms.fixedTotal += 12 * m_sp;
+            ms.stretchTotal = 2 * m_sp;
+            for (int k = m + 1; k <= e; ++k) {
+                m_multi[size_t(k)] = -1;
+                MeasureSpacing& h = m_spacing[size_t(k)];
+                h.fixedTotal = h.stretchTotal = h.prefix = 0;
+                std::fill(h.fixedAt.begin(), h.fixedAt.end(), 0);
+                std::fill(h.stretchAt.begin(), h.stretchAt.end(), 0);
+            }
+        }
+        m = e + 1;
+    }
+}
+
+// Multi-measure rest: thick bar on the middle line with serifs, the count above the staff.
+void Builder::drawMultiRest(PageLayout& pg, qreal x0, qreal x1, qreal staffTop, int count)
+{
+    const qreal sp = m_sp;
+    const qreal a = x0 + 1.4 * sp, b = x1 - 1.4 * sp;
+    QPainterPath bar;
+    bar.addRect(QRectF(QPointF(a, staffTop + 1.5 * sp), QPointF(b, staffTop + 2.5 * sp)));
+    pg.fills.push_back(bar);
+    line(pg, a, staffTop + 1 * sp, a, staffTop + 3 * sp, 0.16);
+    line(pg, b, staffTop + 1 * sp, b, staffTop + 3 * sp, 0.16);
+    const QString digits = QString::number(count);
+    qreal w = 0;
+    for (QChar c : digits) w += m_font.advance(char16_t(smufl::TimeSig0 + (c.unicode() - u'0')), sp);
+    qreal x = (a + b) / 2 - w / 2;
+    for (QChar c : digits) {
+        const char16_t cp = char16_t(smufl::TimeSig0 + (c.unicode() - u'0'));
+        glyph(pg, cp, x, staffTop - 1.6 * sp);
+        x += m_font.advance(cp, sp);
+    }
 }
 
 void Builder::repeatDots(PageLayout& pg, qreal cx, qreal staffTop)
@@ -1429,6 +1505,9 @@ Layout Builder::run()
         else if (mk.bar == BarStyle::Double) ms.fixedTotal += 0.4 * m_sp;
     }
 
+    m_multi.assign(size_t(nMeasures), 0);
+    if (m_opt.multiRests) findMultiRests();
+
     // Scroll view: one endless system on a single strip, no title, natural spacing.
     if (m_opt.continuous) {
         const qreal margin = 6 * m_sp;
@@ -1459,8 +1538,11 @@ Layout Builder::run()
         first.texts.push_back({ m_score.title, QPointF(m_opt.pageWidth / 2, margin + 18), 20, true, false, 1 });
         contentTop = margin + 34;
     }
-    if (!m_score.composer.isEmpty()) {
-        first.texts.push_back({ m_score.composer, QPointF(m_opt.pageWidth - margin, contentTop + 10), 10, false, false, -1 });
+    if (!m_score.composer.isEmpty() || !m_opt.partName.isEmpty()) {
+        if (!m_score.composer.isEmpty())
+            first.texts.push_back({ m_score.composer, QPointF(m_opt.pageWidth - margin, contentTop + 10), 10, false, false, -1 });
+        if (!m_opt.partName.isEmpty())
+            first.texts.push_back({ m_opt.partName, QPointF(margin, contentTop + 10), 12, true, false, 0 });
         contentTop += 16;
     }
 
@@ -1484,7 +1566,7 @@ Layout Builder::run()
         while (m < nMeasures) {
             const MeasureSpacing& ms = m_spacing[size_t(m)];
             const qreal pre = m > sys.first ? ms.prefix : 0;
-            if (m > sys.first && fixed + stretch + ms.fixedTotal + pre + ms.stretchTotal > avail) break;
+            if (m > sys.first && m_multi[size_t(m)] >= 0 && fixed + stretch + ms.fixedTotal + pre + ms.stretchTotal > avail) break;
             fixed += ms.fixedTotal + pre;
             stretch += ms.stretchTotal;
             ++m;
@@ -1555,7 +1637,28 @@ Layout Builder::run()
 
 Layout engrave(const Score& score, const EngraveOptions& opt)
 {
-    return Builder(score, opt).run();
+    if (opt.part < 0) return Builder(score, opt).run();
+    // A part: the same score with only that instrument's staves (edits still go to the full score,
+    // so staff numbers in the result are mapped back).
+    const std::vector<PartRange> parts = score.parts();
+    if (opt.part >= int(parts.size())) return Builder(score, opt).run();
+    const PartRange& pr = parts[size_t(opt.part)];
+    Score sub;
+    sub.title = score.title;
+    sub.composer = score.composer;
+    sub.time = score.time;
+    sub.keyFifths = score.keyFifths;
+    sub.timeChanges = score.timeChanges;
+    sub.keyChanges = score.keyChanges;
+    sub.tempo = score.tempo;
+    sub.marks = score.marks;
+    sub.staves.assign(score.staves.begin() + pr.firstStaff, score.staves.begin() + pr.firstStaff + pr.staffCount);
+    for (Staff& st : sub.staves) st.name.clear(); // the part name is printed in the page header instead
+    EngraveOptions o = opt;
+    if (o.partName.isEmpty()) o.partName = pr.name;
+    Layout l = Builder(sub, o).run();
+    for (MeasureSlot& s : l.measureSlots) s.staff += pr.firstStaff;
+    return l;
 }
 
 } // namespace pauta
