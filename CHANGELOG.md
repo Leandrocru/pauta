@@ -2,6 +2,15 @@
 
 Todas as mudanças de cada versão. A mais recente fica em cima.
 
+## [0.13.1] — 2026-11-16
+
+### 🔧 Melhorias
+- **Entrada simples — editar uma nota que já está escrita:**
+  - **Selecionar:** clique em cima da nota. Ela fica roxa e pode ser editada; clicar ao lado dela, na mesma coluna, continua acrescentando ao acorde.
+  - **Mover:** com a nota selecionada, **↑ / ↓** sobem e descem a nota, sem precisar de Shift (Ctrl+↑/↓ muda a oitava). Num acorde, só a nota selecionada se move.
+  - **Andar pelas notas:** **← / →** passam para a nota anterior ou seguinte, que fica selecionada para editar do mesmo jeito.
+  - **Outras teclas:** **1–8** mudam a duração da nota selecionada e **Delete** apaga.
+
 ## [0.13.0] — 2026-11-13
 
 ### ✨ Novidades

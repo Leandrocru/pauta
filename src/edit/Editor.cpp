@@ -597,12 +597,15 @@ void Editor::toggleDot()
     });
 }
 
-void Editor::transpose(int steps)
+void Editor::transpose(int steps, bool onlyCursorPitch)
 {
     mutate(QStringLiteral("Transpor"), [&] {
         Event* e = targetEvent();
         if (!e || e->isRest()) return false;
+        bool hasCursorPitch = false;
+        for (const Pitch& p : e->pitches) hasCursorPitch |= p.diatonic() == m_cursor.diatonic;
         for (Pitch& p : e->pitches) {
+            if (onlyCursorPitch && hasCursorPitch && p.diatonic() != m_cursor.diatonic) continue;
             const int d = std::clamp(p.diatonic() + steps, 7, 7 * 8 + 6);
             const bool tied = p.tie;
             p = Pitch::fromDiatonic(d, keyAlterFor(((d % 7) + 7) % 7, m_score.keyAt(m_cursor.measure)));

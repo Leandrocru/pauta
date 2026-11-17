@@ -92,6 +92,7 @@ private:
     qreal m_zoom = 1.5; // widget pixels per page point
     double m_layoutMs = 0;
     Tool m_tool = Tool::SpeedyEntry;
+    void snapCaretToNote();
     bool m_continuous = false;
     int m_part = -1;
     bool m_simpleRest = false;

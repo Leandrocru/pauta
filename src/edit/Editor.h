@@ -75,7 +75,8 @@ public:
     const Event* eventAt(int staff, int measure, int voice, int index) const;              // in the selection, or on the note at the cursor
     void setDynamic(int dynamic);            // 0 removes; selection: first note of each staff                // = or L (Finale-style: tie to the next note)
     void toggleDot();                // .
-    void transpose(int steps);       // Shift+Up/Down on the current event
+    void transpose(int steps, bool onlyCursorPitch = false); // Shift+Up/Down on the current event
+                                     // (Simple Entry: only the selected note of a chord moves)
 
     // Navigation
     void moveStep(int d);

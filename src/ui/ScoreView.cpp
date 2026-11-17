@@ -352,6 +352,11 @@ void ScoreView::paintGhost(QPainter& p, int page)
 {
     const int v = m_ed->cursor().voice;
     if (m_hover.slot) {
+        // The selected note stays marked while the mouse moves.
+        const Cursor& c = m_ed->cursor();
+        if (const MeasureSlot* s = m_layout.slot(c.staff, c.measure); s && s->page == page && c.index < int(s->eventX[size_t(c.voice)].size()))
+            p.fillRect(QRectF(s->eventX[size_t(c.voice)][size_t(c.index)] - 0.5 * m_layout.sp, s->staffTop - 1.5 * m_layout.sp,
+                              2.2 * m_layout.sp, 7 * m_layout.sp), caretColor(c.voice, 35));
         // Mouse over a staff: the note shows exactly where the click will put it.
         if (m_hover.page != page) return;
         const InsertPoint ip = insertPointFor(m_hover);
@@ -637,6 +642,20 @@ bool ScoreView::textKeys(QKeyEvent* e)
     return true;
 }
 
+// Simple Entry: the purple caret takes the pitch of the selected note (the nearest one in a chord).
+void ScoreView::snapCaretToNote()
+{
+    const Event* cur = m_ed->currentEvent();
+    if (!cur || cur->isRest()) return;
+    Cursor c = m_ed->cursor();
+    int best = cur->pitches.front().diatonic();
+    for (const Pitch& p : cur->pitches)
+        if (std::abs(p.diatonic() - c.diatonic) < std::abs(best - c.diatonic)) best = p.diatonic();
+    if (best == c.diatonic) return;
+    c.diatonic = best;
+    m_ed->setCursor(c);
+}
+
 void ScoreView::keyPressEvent(QKeyEvent* e)
 {
     if ((m_tool == Tool::Lyrics || m_tool == Tool::Chord) && textKeys(e)) return;
@@ -662,12 +681,25 @@ void ScoreView::keyPressEvent(QKeyEvent* e)
             return;
         }
         if (!ctrl && !alt && k == Qt::Key_0) { m_ed->enterRest(); return; }
+        // With a note selected (clicked, or reached with ← / →), ↑ / ↓ move that note itself.
+        if (!shift && !alt && (k == Qt::Key_Up || k == Qt::Key_Down)) {
+            const Event* cur = m_ed->currentEvent();
+            if (cur && !cur->isRest()) {
+                snapCaretToNote();
+                const int step = (k == Qt::Key_Up ? 1 : -1) * (ctrl ? 7 : 1);
+                m_ed->transpose(step, true);
+                return;
+            }
+        }
         if (shift && !ctrl && !alt && k >= Qt::Key_A && k <= Qt::Key_G) {
             static const QString letters = QStringLiteral("CDEFGAB");
             m_ed->addStepToChord(letters.indexOf(QChar(char16_t(k))));
             return;
         }
-        if (entryKeys(e)) return;
+        if (entryKeys(e)) {
+            if (!shift && (k == Qt::Key_Left || k == Qt::Key_Right)) snapCaretToNote();
+            return;
+        }
         break;
     }
     case Tool::SpeedyEntry:
@@ -696,6 +728,23 @@ void ScoreView::simpleEntryClick(const Hit& h)
     c.measure = ip.slot->measure;
     c.diatonic = h.diatonic;
     c.index = ip.index;
+    // A click on an existing notehead selects that note (to move it with ↑ / ↓, change its
+    // duration with 1–8, or delete it); a click elsewhere in the column adds a chord note.
+    if (ip.onEvent && !m_simpleRest) {
+        const auto& evs = m_ed->score().staves[size_t(c.staff)].measures[size_t(c.measure)].voice(c.voice);
+        if (ip.index < int(evs.size())) {
+            const Event& ev = evs[size_t(ip.index)];
+            int best = -1;
+            for (const Pitch& p : ev.pitches)
+                if (p.diatonic() == h.diatonic) best = p.diatonic();
+            if (best >= 0) {
+                c.diatonic = best;
+                m_ed->setCursor(c);
+                emit m_ed->hint(QStringLiteral("Nota selecionada: ↑/↓ sobe ou desce, 1–8 muda a duração, Delete apaga."));
+                return;
+            }
+        }
+    }
     m_ed->setCursor(c);
     if (m_simpleRest) m_ed->enterRest();
     else m_ed->enterAtCursorPitch();
