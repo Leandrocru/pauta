@@ -37,7 +37,7 @@ fetch() { # base-url file out-dir
 HOST_BASE="$REPO/linux_x64/desktop/qt6_${NODOT}/qt6_${NODOT}/qt.qt6.${NODOT}.linux_gcc_64"
 HOST_OUT="$DEST/$QT_VER/gcc_64"
 fetch "$HOST_BASE" "${QT_VER}-0-${QT_BUILD}qtbase-Linux-RHEL_9_6-GCC-Linux-RHEL_9_6-X86_64.7z" "$HOST_OUT"
-fetch "$HOST_BASE" "${QT_VER}-0-${QT_BUILD}icu-linux-Rhel8.6-x86_64.7z" "$HOST_OUT"
+fetch "$HOST_BASE" "${QT_VER}-0-${QT_BUILD}icu-linux-Rhel8.6-x86_64.7z" "$HOST_OUT/lib" # ICU files sit at the archive root
 
 ANDROID_BASE="$REPO/all_os/android/qt6_${NODOT}/qt6_${NODOT}_arm64_v8a/qt.qt6.${NODOT}.android_arm64_v8a"
 ANDROID_OUT="$DEST/$QT_VER/android_arm64_v8a"
