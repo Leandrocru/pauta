@@ -39,8 +39,10 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPainter>
+#ifndef PAUTA_NO_PRINT
 #include <QPrintDialog>
 #include <QPrinter>
+#endif
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSettings>
@@ -182,7 +184,9 @@ void MainWindow::buildMenus()
     disabledAction(exp, QStringLiteral("Arquivo MIDI…"));
     disabledAction(exp, QStringLiteral("Áudio…"));
     file->addSeparator();
+#ifndef PAUTA_NO_PRINT
     file->addAction(QStringLiteral("&Imprimir…"), QKeySequence::Print, this, &MainWindow::print);
+#endif
     file->addSeparator();
     file->addAction(QStringLiteral("Sai&r"), QKeySequence::Quit, this, &QWidget::close);
 
@@ -1249,6 +1253,9 @@ void MainWindow::exportPartsPdf()
 
 void MainWindow::print()
 {
+#ifdef PAUTA_NO_PRINT
+    exportPdf(); // no printing on this system: the PDF can be printed or shared from there
+#else
     QPrinter printer(QPrinter::HighResolution);
     printer.setPageSize(QPageSize(QPageSize::A4));
     printer.setDocName(m_editor->score().title);
@@ -1268,6 +1275,7 @@ void MainWindow::print()
         paintPage(p, layout, i);
         p.restore();
     }
+#endif
 }
 
 void MainWindow::runLaunchWindow()

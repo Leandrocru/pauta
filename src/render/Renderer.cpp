@@ -127,6 +127,9 @@ bool exportPng(const Layout& layout, int page, const QString& path, qreal dpi)
 QFont textFont(bool bold, bool italic)
 {
     QFont f(QStringLiteral("Times New Roman"));
+    // Liberation Serif has the same metrics (bundled on Android, common on Linux).
+    f.setFamilies({ QStringLiteral("Times New Roman"), QStringLiteral("Liberation Serif") });
+    f.setStyleHint(QFont::Serif);
     f.setPixelSize(int(kTextRefPx));
     f.setBold(bold);
     f.setItalic(italic);

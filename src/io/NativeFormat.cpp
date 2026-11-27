@@ -48,6 +48,9 @@ int attrInt(const QXmlStreamAttributes& a, const char* name, int def)
 bool saveNative(const Score& score, const QString& path, QString* error)
 {
     QSaveFile file(path);
+#ifdef Q_OS_ANDROID
+    file.setDirectWriteFallback(true); // files chosen in Android's picker (content://) cannot be swapped in
+#endif
     if (!file.open(QIODevice::WriteOnly)) {
         if (error) *error = file.errorString();
         return false;

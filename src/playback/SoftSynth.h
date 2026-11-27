@@ -1,5 +1,5 @@
 #pragma once
-// Small polyphonic wavetable synthesizer played through ALSA (Linux). It is meant for
+// Small polyphonic wavetable synthesizer played through ALSA (Linux) or AAudio (Android). It is meant for
 // proof-listening without installing anything: piano-like, string-like and wind-like timbres.
 #include "playback/MidiOut.h"
 
@@ -16,7 +16,7 @@ public:
     SoftSynth();
     ~SoftSynth() override;
     bool ok() const override { return m_ok; }
-    QString name() const override { return QStringLiteral("Sintetizador interno (ALSA)"); }
+    QString name() const override { return QStringLiteral("Sintetizador interno do Pauta"); }
     void send(uint8_t status, uint8_t data1, uint8_t data2) override;
 
 private:
@@ -32,13 +32,18 @@ private:
     void run();
     void handle(const Msg& m);
     void render(int16_t* out, int frames);
+    void takeMessages(bool wait); // applies the queued MIDI messages
+public:
+    void audioCallback(int16_t* out, int frames); // AAudio (Android): called on the audio thread
+private:
 
-    static constexpr int kRate = 44100;
+    int kRate = 44100; // output sample rate (the device may choose another one)
     static constexpr int kTable = 2048;
     static constexpr int kTimbres = 4;   // 0 piano, 1 strings, 2 winds, 3 voice
 
     bool m_ok = false;
-    void* m_pcm = nullptr; // snd_pcm_t*
+    void* m_pcm = nullptr; // snd_pcm_t* (ALSA) or AAudioStream* (Android)
+    std::vector<Msg> m_pending;
     std::thread m_thread;
     std::atomic<bool> m_quit{ false };
     std::mutex m_mutex;

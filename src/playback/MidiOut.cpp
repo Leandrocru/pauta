@@ -5,7 +5,7 @@
 #define NOMINMAX
 #include <windows.h>
 #include <mmsystem.h>
-#elif defined(PAUTA_HAVE_ALSA)
+#elif defined(PAUTA_HAVE_SOFTSYNTH)
 #include "playback/SoftSynth.h"
 #endif
 
@@ -67,10 +67,10 @@ std::unique_ptr<MidiOut> createMidiOut()
     auto out = std::make_unique<WinMidiOut>();
     if (out->ok()) return out;
     return std::make_unique<NullOut>(QStringLiteral("Nenhum sintetizador MIDI disponível no Windows"));
-#elif defined(PAUTA_HAVE_ALSA)
+#elif defined(PAUTA_HAVE_SOFTSYNTH)
     auto out = std::make_unique<SoftSynth>();
     if (out->ok()) return out;
-    return std::make_unique<NullOut>(QStringLiteral("Não foi possível abrir a saída de áudio (ALSA)"));
+    return std::make_unique<NullOut>(QStringLiteral("Não foi possível abrir a saída de áudio"));
 #else
     return std::make_unique<NullOut>(QStringLiteral("Reprodução indisponível neste sistema"));
 #endif

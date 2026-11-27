@@ -6,7 +6,12 @@ project(Pauta VERSION 0.13.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Gui PrintSupport Xml Network)
+# Qt has no printing on Android (PDF export is used there instead).
+set(PAUTA_QT_COMPONENTS Widgets Gui Xml Network)
+if(NOT ANDROID)
+    list(APPEND PAUTA_QT_COMPONENTS PrintSupport)
+endif()
+find_package(Qt6 REQUIRED COMPONENTS ${PAUTA_QT_COMPONENTS})
 qt_standard_project_setup()
 
 # Qt's private zip reader (QZipReader) opens compressed MusicXML (.mxl). It lives in QtCore
@@ -66,7 +71,12 @@ target_compile_definitions(Pauta PRIVATE PROJECT_VERSION_STRING="${PROJECT_VERSI
 # GitHub repository checked for new versions (Releases).
 set(PAUTA_GITHUB_REPO "Leandrocru/pauta" CACHE STRING "owner/name of the GitHub repository with the releases")
 target_compile_definitions(Pauta PRIVATE PAUTA_GITHUB_REPO="${PAUTA_GITHUB_REPO}")
-target_link_libraries(Pauta PRIVATE Qt6::Widgets Qt6::Gui Qt6::PrintSupport Qt6::Xml Qt6::Network)
+target_link_libraries(Pauta PRIVATE Qt6::Widgets Qt6::Gui Qt6::Xml Qt6::Network)
+if(ANDROID)
+    target_compile_definitions(Pauta PRIVATE PAUTA_NO_PRINT)
+else()
+    target_link_libraries(Pauta PRIVATE Qt6::PrintSupport)
+endif()
 if(TARGET Qt6::CorePrivate AND TARGET Qt6::GuiPrivate)
     target_link_libraries(Pauta PRIVATE Qt6::CorePrivate Qt6::GuiPrivate)
 else()
@@ -77,12 +87,34 @@ endif()
 if(WIN32)
     target_sources(Pauta PRIVATE resources/pauta.rc) # icon of Pauta.exe
     target_link_libraries(Pauta PRIVATE winmm)       # built-in MIDI synthesizer for playback
+elseif(ANDROID)
+    # Built-in synthesizer through AAudio; text font with the metrics of Times New Roman.
+    target_sources(Pauta PRIVATE src/playback/SoftSynth.h src/playback/SoftSynth.cpp)
+    target_link_libraries(Pauta PRIVATE aaudio)
+    target_compile_definitions(Pauta PRIVATE PAUTA_HAVE_SOFTSYNTH)
+    qt_add_resources(Pauta "android_fonts"
+        PREFIX "/fonts"
+        BASE resources/fonts/liberation
+        FILES resources/fonts/liberation/LiberationSerif-Regular.ttf resources/fonts/liberation/LiberationSerif-Bold.ttf
+              resources/fonts/liberation/LiberationSerif-Italic.ttf resources/fonts/liberation/LiberationSerif-BoldItalic.ttf
+    )
+    math(EXPR PAUTA_VERSION_CODE "${PROJECT_VERSION_MAJOR} * 10000 + ${PROJECT_VERSION_MINOR} * 100 + ${PROJECT_VERSION_PATCH}")
+    set_target_properties(Pauta PROPERTIES
+        QT_ANDROID_PACKAGE_NAME "io.github.leandrocru.pauta"
+        QT_ANDROID_APP_NAME "Pauta"
+        QT_ANDROID_APP_ICON "@mipmap/ic_launcher"
+        QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/packaging/android"
+        QT_ANDROID_VERSION_NAME "${PROJECT_VERSION}"
+        QT_ANDROID_VERSION_CODE "${PAUTA_VERSION_CODE}"
+        QT_ANDROID_MIN_SDK_VERSION 28
+        QT_ANDROID_TARGET_SDK_VERSION 35
+    )
 elseif(UNIX AND NOT APPLE)
     find_package(ALSA)
     if(ALSA_FOUND)
         target_sources(Pauta PRIVATE src/playback/SoftSynth.h src/playback/SoftSynth.cpp)
         target_link_libraries(Pauta PRIVATE ALSA::ALSA)
-        target_compile_definitions(Pauta PRIVATE PAUTA_HAVE_ALSA)
+        target_compile_definitions(Pauta PRIVATE PAUTA_HAVE_ALSA PAUTA_HAVE_SOFTSYNTH)
     else()
         message(WARNING "ALSA nao encontrado: reproducao de som desativada")
     endif()
@@ -93,7 +125,7 @@ if(MSVC)
 endif()
 
 # ---- Linux: installation layout, .deb (CPack) and the AppDir used for the AppImage ----------
-if(UNIX AND NOT APPLE)
+if(UNIX AND NOT APPLE AND NOT ANDROID)
     include(GNUInstallDirs)
     set_target_properties(Pauta PROPERTIES OUTPUT_NAME pauta)
     install(TARGETS Pauta RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

@@ -554,6 +554,9 @@ bool exportMusicXml(const Score& score, const QString& path, QString* error)
     }
 
     QSaveFile f(path);
+#ifdef Q_OS_ANDROID
+    f.setDirectWriteFallback(true); // files chosen in Android's picker (content://) cannot be swapped in
+#endif
     if (!f.open(QIODevice::WriteOnly) || f.write(xml) != xml.size() || !f.commit()) {
         if (error) *error = f.errorString();
         return false;

@@ -118,6 +118,8 @@ void Updater::handleLatest(const QByteArray& json, bool interactive)
     QString wanted;
 #if defined(Q_OS_WIN)
     wanted = QStringLiteral("Pauta.exe");
+#elif defined(Q_OS_ANDROID)
+    wanted = QStringLiteral(".apk");
 #elif defined(Q_OS_LINUX)
     wanted = qEnvironmentVariableIsSet("APPIMAGE") ? QStringLiteral(".AppImage") : QStringLiteral(".deb");
 #endif
@@ -183,6 +185,13 @@ void Updater::offer(const ReleaseInfo& info)
 
 void Updater::install(const ReleaseInfo& info)
 {
+#if defined(Q_OS_ANDROID)
+    // Android installs APKs itself: open the download in the browser and let the system ask.
+    QDesktopServices::openUrl(QUrl(info.assetUrl.isEmpty() ? info.pageUrl : info.assetUrl));
+    QMessageBox::information(m_window, QStringLiteral("Atualizar"),
+                             QStringLiteral("O navegador vai baixar o Pauta %1. Quando terminar, toque no arquivo e em Instalar.").arg(info.version));
+    return;
+#else
     // Where the download goes.
     QString target;
 #if defined(Q_OS_WIN)
@@ -252,6 +261,7 @@ void Updater::install(const ReleaseInfo& info)
         }
 #endif
     });
+#endif
 }
 
 QString Updater::changelogFor(const QString& version)

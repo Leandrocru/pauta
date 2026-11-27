@@ -1,6 +1,10 @@
 #include "playback/SoftSynth.h"
 
+#if defined(__ANDROID__)
+#include <aaudio/AAudio.h>
+#else
 #include <alsa/asoundlib.h>
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -42,6 +46,25 @@ SoftSynth::SoftSynth()
         for (int i = 0; i < kTable; ++i) m_tables[size_t(t)][size_t(i)] = float(tmp[size_t(i)] / peak);
     }
 
+#if defined(__ANDROID__)
+    AAudioStreamBuilder* b = nullptr;
+    if (AAudio_createStreamBuilder(&b) != AAUDIO_OK) return;
+    AAudioStreamBuilder_setFormat(b, AAUDIO_FORMAT_PCM_I16);
+    AAudioStreamBuilder_setChannelCount(b, 2);
+    AAudioStreamBuilder_setSampleRate(b, kRate);
+    AAudioStreamBuilder_setPerformanceMode(b, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
+    AAudioStreamBuilder_setDataCallback(b, [](AAudioStream*, void* self, void* data, int32_t frames) {
+        static_cast<SoftSynth*>(self)->audioCallback(static_cast<int16_t*>(data), frames);
+        return aaudio_data_callback_result_t(AAUDIO_CALLBACK_RESULT_CONTINUE);
+    }, this);
+    AAudioStream* stream = nullptr;
+    const bool opened = AAudioStreamBuilder_openStream(b, &stream) == AAUDIO_OK;
+    AAudioStreamBuilder_delete(b);
+    if (!opened) return;
+    kRate = AAudioStream_getSampleRate(stream);
+    m_pcm = stream;
+    m_ok = AAudioStream_requestStart(stream) == AAUDIO_OK;
+#else
     snd_pcm_t* pcm = nullptr;
     if (snd_pcm_open(&pcm, "default", SND_PCM_STREAM_PLAYBACK, 0) < 0) return;
     if (snd_pcm_set_params(pcm, SND_PCM_FORMAT_S16_LE, SND_PCM_ACCESS_RW_INTERLEAVED, 2, kRate, 1, 60000) < 0) {
@@ -51,16 +74,41 @@ SoftSynth::SoftSynth()
     m_pcm = pcm;
     m_ok = true;
     m_thread = std::thread([this] { run(); });
+#endif
 }
 
 SoftSynth::~SoftSynth()
 {
     m_quit = true;
     if (m_thread.joinable()) m_thread.join();
-    if (m_pcm) {
-        snd_pcm_drop(static_cast<snd_pcm_t*>(m_pcm));
-        snd_pcm_close(static_cast<snd_pcm_t*>(m_pcm));
+    if (!m_pcm) return;
+#if defined(__ANDROID__)
+    auto* stream = static_cast<AAudioStream*>(m_pcm);
+    AAudioStream_requestStop(stream);
+    AAudioStream_close(stream);
+#else
+    snd_pcm_drop(static_cast<snd_pcm_t*>(m_pcm));
+    snd_pcm_close(static_cast<snd_pcm_t*>(m_pcm));
+#endif
+}
+
+void SoftSynth::takeMessages(bool wait)
+{
+    {
+        // The audio callback must not block: it takes the messages next time if the lock is busy.
+        std::unique_lock<std::mutex> lock(m_mutex, std::defer_lock);
+        if (wait) lock.lock();
+        else if (!lock.try_lock()) return;
+        m_pending.swap(m_queue);
     }
+    for (const Msg& m : m_pending) handle(m);
+    m_pending.clear();
+}
+
+void SoftSynth::audioCallback(int16_t* out, int frames)
+{
+    takeMessages(false);
+    render(out, frames);
 }
 
 void SoftSynth::send(uint8_t status, uint8_t d1, uint8_t d2)
@@ -134,21 +182,17 @@ void SoftSynth::render(int16_t* out, int frames)
 
 void SoftSynth::run()
 {
+#if !defined(__ANDROID__)
     auto* pcm = static_cast<snd_pcm_t*>(m_pcm);
     constexpr int kFrames = 256;
     std::vector<int16_t> buf(kFrames * 2);
-    std::vector<Msg> pending;
     while (!m_quit) {
-        {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            pending.swap(m_queue);
-        }
-        for (const Msg& m : pending) handle(m);
-        pending.clear();
+        takeMessages(true);
         render(buf.data(), kFrames);
         snd_pcm_sframes_t n = snd_pcm_writei(pcm, buf.data(), kFrames);
         if (n < 0) snd_pcm_recover(pcm, int(n), 1);
     }
+#endif
 }
 
 } // namespace pauta::playback

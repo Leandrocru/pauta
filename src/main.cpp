@@ -19,6 +19,7 @@
 #include "ui/MainWindow.h"
 
 #include <QApplication>
+#include <QFontDatabase>
 #include <QCommandLineParser>
 #include <QElapsedTimer>
 #include <QGlyphRun>
@@ -107,6 +108,11 @@ int main(int argc, char* argv[])
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("Pauta"));
     QApplication::setApplicationVersion(QStringLiteral(PROJECT_VERSION_STRING));
+#ifdef Q_OS_ANDROID
+    // Android has no Times New Roman: the bundled Liberation Serif has the same metrics.
+    for (const char* f : { "Regular", "Bold", "Italic", "BoldItalic" })
+        QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/LiberationSerif-%1.ttf").arg(QLatin1String(f)));
+#endif
     QApplication::setOrganizationName(QStringLiteral("Pauta"));
 
     QApplication::setWindowIcon(QIcon(QStringLiteral(":/resources/pauta.png")));

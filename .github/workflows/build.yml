@@ -2,7 +2,7 @@ name: build
 
 # Every push builds and tests Windows and Linux and keeps the packages as artifacts.
 # Pushing a tag "vX.Y.Z" also publishes them on the Releases page:
-#   Pauta.exe (Windows installer), Pauta-x86_64.AppImage and pauta_X.Y.Z_amd64.deb.
+#   Pauta.exe (Windows installer), Pauta-x86_64.AppImage, pauta_X.Y.Z_amd64.deb and Pauta.apk (Android).
 on:
   push:
     branches: ["**"]
@@ -171,9 +171,74 @@ jobs:
             *.deb
             Pauta-x86_64.AppImage
 
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ferramentas (py7zr, ninja)
+        run: |
+          python3 -m pip install --quiet py7zr
+          sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Cache do Qt para Android
+        id: qtcache
+        uses: actions/cache@v4
+        with:
+          path: /opt/qt
+          key: qt-6.11.3-android-arm64-${{ hashFiles('tools/get-qt-android.sh') }}
+
+      - name: Baixar Qt para Android
+        if: steps.qtcache.outputs.cache-hit != 'true'
+        run: sudo mkdir -p /opt/qt && sudo chown "$USER" /opt/qt && bash tools/get-qt-android.sh /opt/qt
+
+      - name: Compilar o APK
+        run: |
+          echo "NDKs instalados:"; ls "$ANDROID_SDK_ROOT/ndk" || true
+          NDK="$(ls -d "$ANDROID_SDK_ROOT"/ndk/27.* 2>/dev/null | sort -V | tail -1)"
+          [ -n "$NDK" ] || NDK="$ANDROID_NDK_LATEST_HOME"
+          echo "usando NDK $NDK"
+          cmake -S . -B build-android -G Ninja -DCMAKE_BUILD_TYPE=Release             -DCMAKE_TOOLCHAIN_FILE=/opt/qt/6.11.3/android_arm64_v8a/lib/cmake/Qt6/qt.toolchain.cmake             -DQT_HOST_PATH=/opt/qt/6.11.3/gcc_64             -DANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" -DANDROID_NDK_ROOT="$NDK"
+          cmake --build build-android --target apk
+          find build-android -name "*.apk" -exec ls -l {} \;
+
+      - name: Assinar o APK
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          BT="$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)"
+          APK="$(find build-android -name "*release*.apk" | head -1)"
+          [ -n "$APK" ] || APK="$(find build-android -name "*.apk" | head -1)"
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > pauta.keystore
+          else
+            # No signing key configured: a throwaway key (installs, but updates need a reinstall).
+            echo "::warning::Sem chave de assinatura (segredo ANDROID_KEYSTORE_B64): APK assinado com chave temporária"
+            KEYSTORE_PASS=temporaria; KEY_ALIAS=pauta
+            keytool -genkeypair -keystore pauta.keystore -storepass "$KEYSTORE_PASS" -keypass "$KEYSTORE_PASS"               -alias "$KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Pauta"
+          fi
+          "$BT/zipalign" -f -p 4 "$APK" aligned.apk
+          "$BT/apksigner" sign --ks pauta.keystore --ks-pass "pass:$KEYSTORE_PASS" --ks-key-alias "$KEY_ALIAS" --out Pauta.apk aligned.apk
+          "$BT/apksigner" verify --print-certs Pauta.apk | head -3
+          "$BT/aapt" dump badging Pauta.apk | head -5
+          rm -f pauta.keystore
+          ls -l Pauta.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pauta-android
+          path: Pauta.apk
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, linux]
+    needs: [windows, linux, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -193,3 +258,4 @@ jobs:
             pkgs/Pauta-windows-instalador/Pauta.exe
             pkgs/Pauta-linux/*.deb
             pkgs/Pauta-linux/Pauta-x86_64.AppImage
+            pkgs/Pauta-android/Pauta.apk
