@@ -222,10 +222,10 @@ jobs:
             # No signing key configured: a throwaway key (installs, but updates need a reinstall).
             echo "::warning::Sem chave de assinatura (segredo ANDROID_KEYSTORE_B64): APK assinado com chave temporária"
             KEYSTORE_PASS=temporaria; KEY_ALIAS=pauta
-            keytool -genkeypair -keystore pauta.keystore -storepass "$KEYSTORE_PASS" -keypass "$KEYSTORE_PASS"               -alias "$KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Pauta"
+            keytool -genkeypair -keystore pauta.keystore -storepass "$KEYSTORE_PASS" -keypass "$KEYSTORE_PASS"               -storetype PKCS12 -alias "$KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Pauta"
           fi
           "$BT/zipalign" -f -p 4 "$APK" aligned.apk
-          "$BT/apksigner" sign --ks pauta.keystore --ks-pass "pass:$KEYSTORE_PASS" --ks-key-alias "$KEY_ALIAS" --out Pauta.apk aligned.apk
+          "$BT/apksigner" sign --ks pauta.keystore --ks-type PKCS12 --ks-pass "pass:$KEYSTORE_PASS" --ks-key-alias "$KEY_ALIAS" --out Pauta.apk aligned.apk
           "$BT/apksigner" verify --print-certs Pauta.apk | head -3
           "$BT/aapt" dump badging Pauta.apk | head -5
           rm -f pauta.keystore
